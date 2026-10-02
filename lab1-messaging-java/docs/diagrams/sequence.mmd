@@ -1,0 +1,34 @@
+sequenceDiagram
+    participant P as Producer
+    participant B as Broker TCP
+    participant S as broker.json
+    participant I as Inventory JVM
+    participant E as inventory.json
+    participant A as Audit JVM
+    P->>B: PUBLISH (orderId, messageId, correlationId, schemaVersion)
+    B->>B: Validate v1, check request identity
+    B->>S: Atomic commit (request + recipient queues)
+    B-->>P: PUBLISHED (accepted, not processed)
+    par Inventory delivery
+        B->>S: Persist in-flight attempt=1
+        B->>I: DELIVER (same message and correlation ID)
+        I->>E: Atomic effect + dedup commit
+        I--xB: Process exits BEFORE ACK
+        B->>S: Retry at front, attempt=2
+        Note over I,E: Restart JVM, reload durable effects
+        I->>B: SUBSCRIBE
+        B-->>I: SUBSCRIBED
+        B->>I: DELIVER same messageId
+        I->>E: Existing effect -> DEDUP_SKIP
+        I-->>B: ACK
+        B->>S: Remove in-flight delivery
+    and Audit delivery
+        B->>A: DELIVER
+        A->>A: Atomic durable audit + dedup
+        A-->>B: ACK
+        B->>S: Remove Audit in-flight delivery
+    end
+    P->>B: Repeat same request and destination
+    B->>B: PUBLISH_DEDUP (no new delivery)
+    B-->>P: PUBLISHED
+    Note over B,S: Retry only if retryable; permanent failure or limit -> durable DLQ

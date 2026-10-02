@@ -1,0 +1,52 @@
+Broker pornit pe portul 5050
+ts=2026-10-01T21:30:18.646879300Z component=producer action=SENDING messageId=9eeab3c5-7efe-3e7d-bd11-ef39eefd4af9 correlationId=529c2eb8-cc72-3f79-bf73-31e751ebeebf destination=toti abonatii orders
+  order=ORD-7a932935-180a-43aa-b236-dee334bf1c24 type=ORDER_CREATED createdAt=2026-10-01T21:30:18.633247600Z schema=1.0 payload={"product":"Laptop","quantity":1}
+ts=2026-10-01T21:30:18.667239500Z component=inventory-consumer action=SUBSCRIBED messageId=- correlationId=- channel=orders
+ts=2026-10-01T21:30:18.668293400Z component=audit-consumer action=SUBSCRIBED messageId=- correlationId=- channel=orders
+ts=2026-10-01T21:30:18.688680200Z component=broker action=QUEUED messageId=9eeab3c5-7efe-3e7d-bd11-ef39eefd4af9 correlationId=529c2eb8-cc72-3f79-bf73-31e751ebeebf consumer=inventory-consumer
+  order=ORD-7a932935-180a-43aa-b236-dee334bf1c24 type=ORDER_CREATED createdAt=2026-10-01T21:30:18.633247600Z schema=1.0 payload={"product":"Laptop","quantity":1}
+ts=2026-10-01T21:30:18.688680200Z component=broker action=QUEUED messageId=9eeab3c5-7efe-3e7d-bd11-ef39eefd4af9 correlationId=529c2eb8-cc72-3f79-bf73-31e751ebeebf consumer=audit-consumer
+  order=ORD-7a932935-180a-43aa-b236-dee334bf1c24 type=ORDER_CREATED createdAt=2026-10-01T21:30:18.633247600Z schema=1.0 payload={"product":"Laptop","quantity":1}
+ts=2026-10-01T21:30:18.692360500Z component=broker action=ACCEPTED messageId=9eeab3c5-7efe-3e7d-bd11-ef39eefd4af9 correlationId=529c2eb8-cc72-3f79-bf73-31e751ebeebf channel=orders recipients=[inventory-consumer, audit-consumer]
+  order=ORD-7a932935-180a-43aa-b236-dee334bf1c24 type=ORDER_CREATED createdAt=2026-10-01T21:30:18.633247600Z schema=1.0 payload={"product":"Laptop","quantity":1}
+ts=2026-10-01T21:30:18.696361500Z component=producer action=BROKER_ACCEPTED messageId=9eeab3c5-7efe-3e7d-bd11-ef39eefd4af9 correlationId=529c2eb8-cc72-3f79-bf73-31e751ebeebf response=PUBLISHED (nu inseamna inca procesare confirmata de consumer)
+  order=ORD-7a932935-180a-43aa-b236-dee334bf1c24 type=ORDER_CREATED createdAt=2026-10-01T21:30:18.633247600Z schema=1.0 payload={"product":"Laptop","quantity":1}
+ts=2026-10-01T21:30:18.697360900Z component=broker action=DELIVER messageId=9eeab3c5-7efe-3e7d-bd11-ef39eefd4af9 correlationId=529c2eb8-cc72-3f79-bf73-31e751ebeebf consumer=inventory-consumer attempt=1
+  order=ORD-7a932935-180a-43aa-b236-dee334bf1c24 type=ORDER_CREATED createdAt=2026-10-01T21:30:18.633247600Z schema=1.0 payload={"product":"Laptop","quantity":1}
+ts=2026-10-01T21:30:18.697360900Z component=broker action=DELIVER messageId=9eeab3c5-7efe-3e7d-bd11-ef39eefd4af9 correlationId=529c2eb8-cc72-3f79-bf73-31e751ebeebf consumer=audit-consumer attempt=1
+  order=ORD-7a932935-180a-43aa-b236-dee334bf1c24 type=ORDER_CREATED createdAt=2026-10-01T21:30:18.633247600Z schema=1.0 payload={"product":"Laptop","quantity":1}
+ts=2026-10-01T21:30:18.698359600Z component=inventory-consumer action=RECEIVED messageId=9eeab3c5-7efe-3e7d-bd11-ef39eefd4af9 correlationId=529c2eb8-cc72-3f79-bf73-31e751ebeebf 
+  order=ORD-7a932935-180a-43aa-b236-dee334bf1c24 type=ORDER_CREATED createdAt=2026-10-01T21:30:18.633247600Z schema=1.0 payload={"product":"Laptop","quantity":1}
+ts=2026-10-01T21:30:18.698359600Z component=audit-consumer action=RECEIVED messageId=9eeab3c5-7efe-3e7d-bd11-ef39eefd4af9 correlationId=529c2eb8-cc72-3f79-bf73-31e751ebeebf 
+  order=ORD-7a932935-180a-43aa-b236-dee334bf1c24 type=ORDER_CREATED createdAt=2026-10-01T21:30:18.633247600Z schema=1.0 payload={"product":"Laptop","quantity":1}
+ts=2026-10-01T21:30:18.703437300Z component=audit-consumer action=AUDIT_WRITTEN messageId=9eeab3c5-7efe-3e7d-bd11-ef39eefd4af9 correlationId=529c2eb8-cc72-3f79-bf73-31e751ebeebf durable audit record
+  order=ORD-7a932935-180a-43aa-b236-dee334bf1c24 type=ORDER_CREATED createdAt=2026-10-01T21:30:18.633247600Z schema=1.0 payload={"product":"Laptop","quantity":1}
+ts=2026-10-01T21:30:18.703437300Z component=inventory-consumer action=LOCAL_EFFECT_DONE messageId=9eeab3c5-7efe-3e7d-bd11-ef39eefd4af9 correlationId=529c2eb8-cc72-3f79-bf73-31e751ebeebf order=ORD-7a932935-180a-43aa-b236-dee334bf1c24 effectCount=1
+  order=ORD-7a932935-180a-43aa-b236-dee334bf1c24 type=ORDER_CREATED createdAt=2026-10-01T21:30:18.633247600Z schema=1.0 payload={"product":"Laptop","quantity":1}
+ts=2026-10-01T21:30:18.704509200Z component=audit-consumer action=ACK_SENT messageId=9eeab3c5-7efe-3e7d-bd11-ef39eefd4af9 correlationId=529c2eb8-cc72-3f79-bf73-31e751ebeebf 
+  order=ORD-7a932935-180a-43aa-b236-dee334bf1c24 type=ORDER_CREATED createdAt=2026-10-01T21:30:18.633247600Z schema=1.0 payload={"product":"Laptop","quantity":1}
+ts=2026-10-01T21:30:18.704509200Z component=inventory-consumer action=CRASH_BEFORE_ACK messageId=9eeab3c5-7efe-3e7d-bd11-ef39eefd4af9 correlationId=529c2eb8-cc72-3f79-bf73-31e751ebeebf after durable local effect, before ACK
+  order=ORD-7a932935-180a-43aa-b236-dee334bf1c24 type=ORDER_CREATED createdAt=2026-10-01T21:30:18.633247600Z schema=1.0 payload={"product":"Laptop","quantity":1}
+ts=2026-10-01T21:30:18.721996700Z component=broker action=ACK messageId=9eeab3c5-7efe-3e7d-bd11-ef39eefd4af9 correlationId=529c2eb8-cc72-3f79-bf73-31e751ebeebf consumer=audit-consumer attempt=1
+  order=ORD-7a932935-180a-43aa-b236-dee334bf1c24 type=ORDER_CREATED createdAt=2026-10-01T21:30:18.633247600Z schema=1.0 payload={"product":"Laptop","quantity":1}
+ts=2026-10-01T21:30:18.730868Z component=broker action=RETRY messageId=9eeab3c5-7efe-3e7d-bd11-ef39eefd4af9 correlationId=529c2eb8-cc72-3f79-bf73-31e751ebeebf consumer=inventory-consumer nextAttempt=2 reason=consumer disconnected before ACK
+  order=ORD-7a932935-180a-43aa-b236-dee334bf1c24 type=ORDER_CREATED createdAt=2026-10-01T21:30:18.633247600Z schema=1.0 payload={"product":"Laptop","quantity":1}
+ts=2026-10-01T21:30:19.242363500Z component=inventory-consumer action=SUBSCRIBED messageId=- correlationId=- channel=orders
+ts=2026-10-01T21:30:19.265447Z component=broker action=DELIVER messageId=9eeab3c5-7efe-3e7d-bd11-ef39eefd4af9 correlationId=529c2eb8-cc72-3f79-bf73-31e751ebeebf consumer=inventory-consumer attempt=2
+  order=ORD-7a932935-180a-43aa-b236-dee334bf1c24 type=ORDER_CREATED createdAt=2026-10-01T21:30:18.633247600Z schema=1.0 payload={"product":"Laptop","quantity":1}
+ts=2026-10-01T21:30:19.267437300Z component=inventory-consumer action=RECEIVED messageId=9eeab3c5-7efe-3e7d-bd11-ef39eefd4af9 correlationId=529c2eb8-cc72-3f79-bf73-31e751ebeebf 
+  order=ORD-7a932935-180a-43aa-b236-dee334bf1c24 type=ORDER_CREATED createdAt=2026-10-01T21:30:18.633247600Z schema=1.0 payload={"product":"Laptop","quantity":1}
+ts=2026-10-01T21:30:19.268437900Z component=inventory-consumer action=DEDUP_SKIP messageId=9eeab3c5-7efe-3e7d-bd11-ef39eefd4af9 correlationId=529c2eb8-cc72-3f79-bf73-31e751ebeebf durable effect already exists
+  order=ORD-7a932935-180a-43aa-b236-dee334bf1c24 type=ORDER_CREATED createdAt=2026-10-01T21:30:18.633247600Z schema=1.0 payload={"product":"Laptop","quantity":1}
+ts=2026-10-01T21:30:19.269437400Z component=inventory-consumer action=ACK_SENT messageId=9eeab3c5-7efe-3e7d-bd11-ef39eefd4af9 correlationId=529c2eb8-cc72-3f79-bf73-31e751ebeebf 
+  order=ORD-7a932935-180a-43aa-b236-dee334bf1c24 type=ORDER_CREATED createdAt=2026-10-01T21:30:18.633247600Z schema=1.0 payload={"product":"Laptop","quantity":1}
+ts=2026-10-01T21:30:19.273443Z component=broker action=ACK messageId=9eeab3c5-7efe-3e7d-bd11-ef39eefd4af9 correlationId=529c2eb8-cc72-3f79-bf73-31e751ebeebf consumer=inventory-consumer attempt=2
+  order=ORD-7a932935-180a-43aa-b236-dee334bf1c24 type=ORDER_CREATED createdAt=2026-10-01T21:30:18.633247600Z schema=1.0 payload={"product":"Laptop","quantity":1}
+ts=2026-10-01T21:30:19.274442300Z component=producer action=SENDING messageId=9eeab3c5-7efe-3e7d-bd11-ef39eefd4af9 correlationId=529c2eb8-cc72-3f79-bf73-31e751ebeebf destination=toti abonatii orders
+  order=ORD-7a932935-180a-43aa-b236-dee334bf1c24 type=ORDER_CREATED createdAt=2026-10-01T21:30:19.274442300Z schema=1.0 payload={"product":"Laptop","quantity":1}
+ts=2026-10-01T21:30:19.279687400Z component=broker action=PUBLISH_DEDUP messageId=9eeab3c5-7efe-3e7d-bd11-ef39eefd4af9 correlationId=529c2eb8-cc72-3f79-bf73-31e751ebeebf request already registered
+  order=ORD-7a932935-180a-43aa-b236-dee334bf1c24 type=ORDER_CREATED createdAt=2026-10-01T21:30:18.633247600Z schema=1.0 payload={"product":"Laptop","quantity":1}
+ts=2026-10-01T21:30:19.280718Z component=producer action=BROKER_ACCEPTED messageId=9eeab3c5-7efe-3e7d-bd11-ef39eefd4af9 correlationId=529c2eb8-cc72-3f79-bf73-31e751ebeebf response=PUBLISHED (nu inseamna inca procesare confirmata de consumer)
+  order=ORD-7a932935-180a-43aa-b236-dee334bf1c24 type=ORDER_CREATED createdAt=2026-10-01T21:30:19.274442300Z schema=1.0 payload={"product":"Laptop","quantity":1}
+VERIFIED: effectCount=1, DLQ=0, repeated request ignored.
+Durable demo data: D:\AAnul VI\pad\Lab1_PAD_Messaging_Java_IntelliJ\lab1-messaging-java\data\demo-11982092356657519533

@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Order message v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "timestamp", "correlationId", "schemaVersion", "type", "key", "payload"],
+  "properties": {
+    "id": {"type": "string", "format": "uuid"},
+    "timestamp": {"type": "string", "format": "date-time"},
+    "correlationId": {"type": "string", "format": "uuid"},
+    "schemaVersion": {"const": "1.0"},
+    "type": {"const": "ORDER_CREATED"},
+    "key": {"type": "string", "minLength": 1, "pattern": "\\S"},
+    "payload": {
+      "type": "string",
+      "contentMediaType": "application/json",
+      "contentSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["product", "quantity"],
+        "properties": {
+          "product": {"type": "string", "minLength": 1, "pattern": "\\S"},
+          "quantity": {"type": "integer", "minimum": 1, "maximum": 2147483647}
+        }
+      }
+    }
+  }
+}

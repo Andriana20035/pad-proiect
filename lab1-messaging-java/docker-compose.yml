@@ -1,0 +1,35 @@
+services:
+  broker:
+    build:
+      context: .
+      dockerfile: deployment/Dockerfile
+    command: ["md.lab.integrationservice.BrokerMain", "--headless"]
+    ports: ["5050:5050"]
+    volumes: ["broker-data:/data"]
+  inventory:
+    build:
+      context: .
+      dockerfile: deployment/Dockerfile
+    command: ["-Dbroker.host=broker", "md.lab.consumers.InventoryConsumer"]
+    depends_on: [broker]
+    volumes: ["inventory-data:/data"]
+  audit:
+    build:
+      context: .
+      dockerfile: deployment/Dockerfile
+    command: ["-Dbroker.host=broker", "md.lab.consumers.AuditConsumer"]
+    depends_on: [broker]
+    volumes: ["audit-data:/data"]
+  producer:
+    build:
+      context: .
+      dockerfile: deployment/Dockerfile
+    command: ["-Dbroker.host=broker", "md.lab.orderservice.OrderProducer"]
+    depends_on: [broker]
+    profiles: [tools]
+    stdin_open: true
+    tty: true
+volumes:
+  broker-data:
+  inventory-data:
+  audit-data:

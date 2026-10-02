@@ -1,0 +1,5 @@
+target/
+.idea/
+data/
+*.log
+!docs/runbook/example-correlated.log
