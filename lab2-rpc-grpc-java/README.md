@@ -5,7 +5,7 @@ Proiect Java/Maven care implementeaza comunicarea dintre servicii prin **gRPC**,
 dar inlocuieste protocolul TCP/JSON personalizat cu un contract RPC `.proto` si stub-uri
 generate.
 
-## Ce demonstreaza proiectul
+## Task-uri
 
 - contract RPC versionat in `src/main/proto/messaging_rpc.proto` si `contracts/`;
 - apeluri **unary**: CreateTopic, Publish, Unsubscribe, Ack, Nack, GetStats, ListDlq, Health;
@@ -32,26 +32,6 @@ client/server. Producerul nu mai serializeaza manual un protocol de comenzi ca i
 Pentru Lab 2, comunicarea este la nivel RPC: clientul apeleaza `publish()`, `ack()` etc.,
 ca si cum ar apela metode locale, iar gRPC gestioneaza codificarea protobuf si HTTP/2.
 
-## Cerinte
-
-- JDK 17+ (proiectul merge cu JDK 22 din IntelliJ);
-- Maven 3.9+ sau Maven-ul integrat in IntelliJ;
-- conexiune la Maven Central la prima compilare pentru dependente si code generation.
-
-## Verificare rapida
-
-```powershell
-mvn clean test
-mvn -DskipTests package
-java -cp target/lab2-rpc-grpc-1.0.0-all.jar md.lab2.demo.DemoMain
-```
-
-Sau pe Windows:
-
-```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\run-lab2.ps1 -Mode tests
-powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\run-lab2.ps1 -Mode demo
-```
 
 DemoMain porneste doua noduri gRPC cu aceeasi stocare persistenta, doi consumatori si
 un producer. Inventory simuleaza o deconectare dupa efectul local persistent, dar inainte
@@ -88,7 +68,7 @@ Prima procesare va salva efectul local si va opri procesul cu exit code 17 inain
 ACK-ul `PERSISTED`. Porneste din nou Inventory fara aceasta optiune: acelasi mesaj este
 redat, `DEDUP_SKIP` apare in log, apoi se trimite ACK final.
 
-## Important despre deadline
+## Despre deadline
 
 Apelurile unary au deadline implicit de 2 secunde. `Subscribe` este un stream de lunga
 durata si **nu primeste deadline scurt**. Daca brokerul cade, stream-ul se inchide, iar
@@ -156,7 +136,7 @@ lab2-rpc-grpc-java/
 └── pom.xml
 ```
 
-## Testele importante
+## Teste (cele mai relevante)
 
 | Test | Ce demonstreaza |
 |---|---|
@@ -181,8 +161,6 @@ lab2-rpc-grpc-java/
 - Diagrame: `docs/diagrams/`
 - Scenarii de esec: `docs/evidence/failure-scenarios.md`
 - Runbook: `docs/runbook/README.md`
-- Workflow Git pentru 3 colegi si tag-uri: `docs/GIT-WORKFLOW.md`
-- Limite si scalare: `docs/LIMITATIONS-AND-SCALING.md`
 
 ## Referinte tehnice
 
@@ -190,4 +168,3 @@ lab2-rpc-grpc-java/
 - https://grpc.io/docs/guides/deadlines/
 - https://grpc.io/docs/guides/retry/
 - https://grpc.io/docs/guides/custom-load-balancing/
-- https://grpc.io/docs/languages/java/basics/
