@@ -18,6 +18,7 @@ import java.time.Duration;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class GrpcPublishSubscribeTest {
@@ -76,6 +77,7 @@ class GrpcPublishSubscribeTest {
                     consumer.close();
                     thread.interrupt();
                     thread.join(3000);
+                    assertFalse(thread.isAlive(), "Consumer must terminate before cleanup");
                 }
             }
         }

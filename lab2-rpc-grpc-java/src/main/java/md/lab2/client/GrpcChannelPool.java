@@ -5,13 +5,17 @@ import io.grpc.ManagedChannelBuilder;
 import md.lab2.config.Endpoint;
 
 import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
+import java.util.HashMap;
 import java.util.concurrent.TimeUnit;
 
 public final class GrpcChannelPool implements AutoCloseable {
-    private final Map<Endpoint, ManagedChannel> channels = new ConcurrentHashMap<>();
+    private final Map<Endpoint, ManagedChannel> channels = new HashMap<>();
+    private boolean closed;
 
-    public ManagedChannel channel(Endpoint endpoint) {
+    public synchronized ManagedChannel channel(Endpoint endpoint) {
+        if (closed) {
+            throw new IllegalStateException("gRPC channel pool is closed");
+        }
         return channels.computeIfAbsent(endpoint, key ->
                 ManagedChannelBuilder.forAddress(key.host(), key.port())
                         .usePlaintext()
@@ -19,18 +23,28 @@ public final class GrpcChannelPool implements AutoCloseable {
                         .build());
     }
 
-    public void invalidate(Endpoint endpoint) {
+    public synchronized void invalidate(Endpoint endpoint) {
         ManagedChannel channel = channels.remove(endpoint);
         if (channel != null) {
-            channel.shutdownNow();
+            shutdownChannel(channel);
         }
     }
 
     @Override
-    public void close() {
+    public synchronized void close() {
+        closed = true;
         for (ManagedChannel channel : channels.values()) {
-            channel.shutdownNow();
+            shutdownChannel(channel);
         }
         channels.clear();
+    }
+
+    private static void shutdownChannel(ManagedChannel channel) {
+        channel.shutdownNow();
+        try {
+            channel.awaitTermination(2, TimeUnit.SECONDS);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
     }
 }

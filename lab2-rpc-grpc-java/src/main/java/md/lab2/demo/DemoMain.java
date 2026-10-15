@@ -74,61 +74,73 @@ public final class DemoMain {
 
             Thread inventoryThread = new Thread(inventory, "inventory-rpc-consumer");
             Thread auditThread = new Thread(audit, "audit-rpc-consumer");
-            inventoryThread.start();
-            auditThread.start();
+            try {
+                inventoryThread.start();
+                auditThread.start();
 
-            waitFor(() -> {
-                try (ProducerClient check = new ProducerClient(
+                waitFor(() -> {
+                    try (ProducerClient check = new ProducerClient(
+                            endpoints, base.unaryDeadlineMs())) {
+                        return check.stats("orders.v1", "")
+                                .getActiveSubscriptions() == 2;
+                    }
+                }, Duration.ofSeconds(5), "consumers did not subscribe");
+
+                PublishReply first;
+                PublishReply second;
+                try (ProducerClient producer = new ProducerClient(
                         endpoints, base.unaryDeadlineMs())) {
-                    return check.stats("orders.v1", "")
-                            .getActiveSubscriptions() == 2;
+                    first = producer.publishOrderCreated(
+                            "orders.v1",
+                            "ORD-2001",
+                            "{\"product\":\"Laptop\",\"quantity\":1}");
+                    second = producer.publishOrderCreated(
+                            "orders.v1",
+                            "ORD-2002",
+                            "{\"product\":\"Monitor\",\"quantity\":2}");
                 }
-            }, Duration.ofSeconds(5), "consumers did not subscribe");
 
-            PublishReply first;
-            PublishReply second;
-            try (ProducerClient producer = new ProducerClient(
-                    endpoints, base.unaryDeadlineMs())) {
-                first = producer.publishOrderCreated(
-                        "orders.v1",
-                        "ORD-2001",
-                        "{\"product\":\"Laptop\",\"quantity\":1}");
-                second = producer.publishOrderCreated(
-                        "orders.v1",
-                        "ORD-2002",
-                        "{\"product\":\"Monitor\",\"quantity\":2}");
-            }
+                waitFor(() -> {
+                    try (ProducerClient check = new ProducerClient(
+                            endpoints, base.unaryDeadlineMs())) {
+                        StatsReply stats = check.stats("orders.v1", "");
+                        return stats.getCompleted() == 4;
+                    }
+                }, Duration.ofSeconds(12), "deliveries did not complete");
 
-            waitFor(() -> {
                 try (ProducerClient check = new ProducerClient(
                         endpoints, base.unaryDeadlineMs())) {
                     StatsReply stats = check.stats("orders.v1", "");
-                    return stats.getCompleted() == 4;
+                    if (first.getBrokerNode().equals(second.getBrokerNode())
+                            || inventoryStore.effectCount("ORD-2001") != 1
+                            || inventoryStore.effectCount("ORD-2002") != 1
+                            || stats.getCompleted() != 4 || stats.getDlq() != 0) {
+                        throw new IllegalStateException("Demo guarantees were not satisfied");
+                    }
+                    System.out.println("\n=== LAB 2 RESULT ===");
+                    System.out.println("First publish broker  = " + first.getBrokerNode());
+                    System.out.println("Second publish broker = " + second.getBrokerNode());
+                    System.out.println("Inventory ORD-2001 effectCount = "
+                            + inventoryStore.effectCount("ORD-2001"));
+                    System.out.println("Inventory ORD-2002 effectCount = "
+                            + inventoryStore.effectCount("ORD-2002"));
+                    System.out.println("Completed deliveries = " + stats.getCompleted());
+                    System.out.println("DLQ size = " + stats.getDlq());
+                    System.out.println("Demo data = " + demoDir);
+                    System.out.println("EXPECTED: different broker nodes, effects=1, completed=4, DLQ=0");
                 }
-            }, Duration.ofSeconds(12), "deliveries did not complete");
 
-            try (ProducerClient check = new ProducerClient(
-                    endpoints, base.unaryDeadlineMs())) {
-                StatsReply stats = check.stats("orders.v1", "");
-                System.out.println("\n=== LAB 2 RESULT ===");
-                System.out.println("First publish broker  = " + first.getBrokerNode());
-                System.out.println("Second publish broker = " + second.getBrokerNode());
-                System.out.println("Inventory ORD-2001 effectCount = "
-                        + inventoryStore.effectCount("ORD-2001"));
-                System.out.println("Inventory ORD-2002 effectCount = "
-                        + inventoryStore.effectCount("ORD-2002"));
-                System.out.println("Completed deliveries = " + stats.getCompleted());
-                System.out.println("DLQ size = " + stats.getDlq());
-                System.out.println("Demo data = " + demoDir);
-                System.out.println("EXPECTED: different broker nodes, effects=1, completed=4, DLQ=0");
+            } finally {
+                inventory.close();
+                audit.close();
+                inventoryThread.interrupt();
+                auditThread.interrupt();
+                inventoryThread.join(3000);
+                auditThread.join(3000);
+                if (inventoryThread.isAlive() || auditThread.isAlive()) {
+                    throw new IllegalStateException("Demo consumer threads did not terminate");
+                }
             }
-
-            inventory.stop();
-            audit.stop();
-            inventoryThread.interrupt();
-            auditThread.interrupt();
-            inventoryThread.join(2000);
-            auditThread.join(2000);
         }
     }
 

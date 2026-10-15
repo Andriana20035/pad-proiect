@@ -18,6 +18,7 @@ import java.time.Duration;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 
 class CrashBeforeFinalAckTest {
     @TempDir
@@ -66,9 +67,10 @@ class CrashBeforeFinalAckTest {
                             reply.getMessageId(), "inventory-service"));
                     assertEquals(0, producer.stats("orders.v1", "").getDlq());
                 } finally {
-                    consumer.stop();
+                    consumer.close();
                     thread.interrupt();
-                    thread.join(1500);
+                    thread.join(3000);
+                    assertFalse(thread.isAlive(), "Crash-test consumer must terminate before cleanup");
                 }
             }
         }

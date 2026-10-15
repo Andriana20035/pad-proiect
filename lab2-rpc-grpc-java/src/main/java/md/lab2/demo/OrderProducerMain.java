@@ -19,7 +19,6 @@ public final class OrderProducerMain {
         try (ProducerClient producer = new ProducerClient(
                 config.endpoints(),
                 config.unaryDeadlineMs())) {
-            producer.createTopic(topic);
             PublishReply reply = producer.publishOrderCreated(
                     topic,
                     orderId,

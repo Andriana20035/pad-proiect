@@ -10,6 +10,8 @@ import md.lab2.rpc.v1.CreateTopicRequest;
 import md.lab2.rpc.v1.DlqReply;
 import md.lab2.rpc.v1.DlqRequest;
 import md.lab2.rpc.v1.Envelope;
+import md.lab2.rpc.v1.HealthReply;
+import md.lab2.rpc.v1.HealthRequest;
 import md.lab2.rpc.v1.MessagingServiceGrpc;
 import md.lab2.rpc.v1.PublishReply;
 import md.lab2.rpc.v1.PublishRequest;
@@ -109,6 +111,10 @@ public final class ProducerClient implements AutoCloseable {
                 .setTopic(topic == null ? "" : topic)
                 .setConsumerId(consumerId == null ? "" : consumerId)
                 .build()));
+    }
+
+    public HealthReply health() {
+        return callUnary(stub -> stub.health(HealthRequest.newBuilder().build()));
     }
 
     public static Envelope orderCreated(String orderId, String payloadJson) {

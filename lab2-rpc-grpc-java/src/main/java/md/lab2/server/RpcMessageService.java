@@ -2,6 +2,7 @@ package md.lab2.server;
 
 import io.grpc.Context;
 import io.grpc.Status;
+import io.grpc.stub.ServerCallStreamObserver;
 import io.grpc.stub.StreamObserver;
 import md.lab2.config.AppConfig;
 import md.lab2.logging.CorrelatedLog;
@@ -35,25 +36,29 @@ import md.lab2.store.StatsSnapshot;
 import md.lab2.store.StoreException;
 
 import java.util.Optional;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 public final class RpcMessageService
         extends MessagingServiceGrpc.MessagingServiceImplBase {
     private final SqliteMessageStore store;
     private final AppConfig config;
     private final PublishFailureInjector publishFailureInjector;
+    private final ExecutorService subscriptionExecutor;
+    private final SubscriptionNotifier subscriptionNotifier;
     private volatile int boundPort;
-
-    public RpcMessageService(SqliteMessageStore store, AppConfig config) {
-        this(store, config, PublishFailureInjector.NONE);
-    }
 
     public RpcMessageService(
             SqliteMessageStore store,
             AppConfig config,
-            PublishFailureInjector publishFailureInjector) {
+            PublishFailureInjector publishFailureInjector,
+            ExecutorService subscriptionExecutor,
+            SubscriptionNotifier subscriptionNotifier) {
         this.store = store;
         this.config = config;
         this.publishFailureInjector = publishFailureInjector;
+        this.subscriptionExecutor = subscriptionExecutor;
+        this.subscriptionNotifier = subscriptionNotifier;
         this.boundPort = config.port();
     }
 
@@ -89,6 +94,14 @@ public final class RpcMessageService
         unary(responseObserver, () -> {
             String topic = validateTopicName(request.getTopic());
             PublishOutcome outcome = store.publish(topic, request.getMessage());
+
+            /*
+             * Wake subscribers immediately after durable persistence. This happens
+             * before the optional failure injector so a lost producer response does
+             * not delay delivery of an already-persisted message.
+             */
+            subscriptionNotifier.signal(topic);
+
             CorrelatedLog.event(
                     "broker:" + config.nodeId(),
                     "PERSISTED",
@@ -120,6 +133,7 @@ public final class RpcMessageService
             requireText(consumerId, "consumerId");
             validateTopicName(topic);
             store.activateSubscription(consumerId, topic);
+
             CorrelatedLog.event(
                     "broker:" + config.nodeId(),
                     "SUBSCRIBED",
@@ -127,45 +141,34 @@ public final class RpcMessageService
                     "-",
                     "consumer=" + consumerId + " topic=" + topic);
 
-            while (!Context.current().isCancelled()) {
-                Optional<DeliveryRecord> next = store.claimNextDelivery(
-                        consumerId,
-                        topic);
-                if (next.isEmpty()) {
-                    sleep(config.subscribePollMs());
-                    continue;
-                }
+            Context callContext = Context.current();
+            AtomicBoolean cancelled = new AtomicBoolean(false);
+            ServerCallStreamObserver<Delivery> serverObserver = serverObserver(
+                    responseObserver);
 
-                DeliveryRecord record = next.get();
-                Delivery delivery = Delivery.newBuilder()
-                        .setDeliveryId(record.deliveryId())
-                        .setTopic(record.topic())
-                        .setConsumerId(record.consumerId())
-                        .setMessage(record.message())
-                        .setAttempt(record.attempt())
-                        .setLeaseDeadlineEpochMs(record.leaseDeadlineEpochMs())
-                        .setBrokerNode(config.nodeId())
-                        .build();
-                CorrelatedLog.event(
-                        "broker:" + config.nodeId(),
-                        "DELIVER",
-                        record.message(),
-                        "consumer=" + consumerId
-                                + " deliveryId=" + record.deliveryId()
-                                + " attempt=" + record.attempt());
-                responseObserver.onNext(delivery);
+            if (serverObserver != null) {
+                serverObserver.setOnCancelHandler(() -> {
+                    cancelled.set(true);
+                    subscriptionNotifier.signal(topic);
+                });
+                serverObserver.setOnReadyHandler(() ->
+                        subscriptionNotifier.signal(topic));
             }
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            if (!Context.current().isCancelled()) {
-                responseObserver.onError(Status.CANCELLED
-                        .withDescription("Subscribe loop interrupted")
-                        .asRuntimeException());
-            }
+
+            /*
+             * Important: do not run the long-lived delivery loop on the gRPC RPC
+             * executor. Submit it to a dedicated elastic subscription executor and
+             * return immediately so Publish/Ack/Nack/Health keep their RPC threads.
+             */
+            subscriptionExecutor.execute(() -> runSubscription(
+                    callContext,
+                    cancelled,
+                    consumerId,
+                    topic,
+                    responseObserver,
+                    serverObserver));
         } catch (RuntimeException e) {
-            if (!Context.current().isCancelled()) {
-                responseObserver.onError(toStatus(e).asRuntimeException());
-            }
+            responseObserver.onError(toStatus(e).asRuntimeException());
         }
     }
 
@@ -177,6 +180,7 @@ public final class RpcMessageService
             store.deactivateSubscription(
                     request.getConsumerId(),
                     request.getTopic());
+            subscriptionNotifier.signalAll();
             return OperationReply.newBuilder()
                     .setOk(true)
                     .setDetail("Subscription paused; pending deliveries are retained")
@@ -202,6 +206,11 @@ public final class RpcMessageService
                     "consumer=" + request.getConsumerId()
                             + " deliveryId=" + request.getDeliveryId()
                             + " completed=" + outcome.completed());
+
+            if (outcome.completed()) {
+                subscriptionNotifier.signalAll();
+            }
+
             return AckReply.newBuilder()
                     .setAccepted(true)
                     .setCompleted(outcome.completed())
@@ -224,6 +233,7 @@ public final class RpcMessageService
                     request.getConsumerId(),
                     request.getReason(),
                     request.getRetryable());
+            subscriptionNotifier.signalAll();
             return NackReply.newBuilder()
                     .setAccepted(true)
                     .setMovedToDlq(outcome.movedToDlq())
@@ -295,6 +305,88 @@ public final class RpcMessageService
         responseObserver.onCompleted();
     }
 
+    private void runSubscription(
+            Context callContext,
+            AtomicBoolean cancelled,
+            String consumerId,
+            String topic,
+            StreamObserver<Delivery> responseObserver,
+            ServerCallStreamObserver<Delivery> serverObserver) {
+        long observedVersion = subscriptionNotifier.snapshot(topic);
+        try {
+            while (subscriptionActive(callContext, cancelled)
+                    && !Thread.currentThread().isInterrupted()) {
+                if (serverObserver != null && !serverObserver.isReady()) {
+                    observedVersion = subscriptionNotifier.awaitChange(
+                            topic,
+                            observedVersion,
+                            config.crossNodeRefreshMs());
+                    continue;
+                }
+
+                Optional<DeliveryRecord> next = store.claimNextDelivery(
+                        consumerId,
+                        topic);
+                if (next.isPresent()) {
+                    DeliveryRecord record = next.get();
+                    Delivery delivery = Delivery.newBuilder()
+                            .setDeliveryId(record.deliveryId())
+                            .setTopic(record.topic())
+                            .setConsumerId(record.consumerId())
+                            .setMessage(record.message())
+                            .setAttempt(record.attempt())
+                            .setLeaseDeadlineEpochMs(record.leaseDeadlineEpochMs())
+                            .setBrokerNode(config.nodeId())
+                            .build();
+                    CorrelatedLog.event(
+                            "broker:" + config.nodeId(),
+                            "DELIVER",
+                            record.message(),
+                            "consumer=" + consumerId
+                                    + " deliveryId=" + record.deliveryId()
+                                    + " attempt=" + record.attempt());
+                    responseObserver.onNext(delivery);
+                    continue;
+                }
+
+                long waitMs = store.nextWakeDelayMs(
+                        consumerId,
+                        topic,
+                        config.crossNodeRefreshMs());
+                observedVersion = subscriptionNotifier.awaitChange(
+                        topic,
+                        observedVersion,
+                        waitMs);
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            if (subscriptionActive(callContext, cancelled)) {
+                responseObserver.onError(Status.CANCELLED
+                        .withDescription("Subscription worker interrupted")
+                        .asRuntimeException());
+            }
+        } catch (RuntimeException e) {
+            if (subscriptionActive(callContext, cancelled)) {
+                responseObserver.onError(toStatus(e).asRuntimeException());
+            }
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private ServerCallStreamObserver<Delivery> serverObserver(
+            StreamObserver<Delivery> observer) {
+        if (observer instanceof ServerCallStreamObserver<?>) {
+            return (ServerCallStreamObserver<Delivery>) observer;
+        }
+        return null;
+    }
+
+    private boolean subscriptionActive(
+            Context callContext,
+            AtomicBoolean cancelled) {
+        return !cancelled.get() && !callContext.isCancelled();
+    }
+
     private String validateTopicName(String topic) {
         requireText(topic, "topic");
         if (!topic.matches("[A-Za-z0-9._-]{1,100}")) {
@@ -311,10 +403,6 @@ public final class RpcMessageService
                     StoreException.Kind.PRECONDITION,
                     field + " is required");
         }
-    }
-
-    private void sleep(long millis) throws InterruptedException {
-        Thread.sleep(Math.max(1, millis));
     }
 
     private <T> void unary(

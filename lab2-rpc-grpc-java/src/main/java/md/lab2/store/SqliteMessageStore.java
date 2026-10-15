@@ -164,9 +164,10 @@ public final class SqliteMessageStore {
     public Optional<DeliveryRecord> claimNextDelivery(
             String consumerId,
             String topic) {
-        long now = System.currentTimeMillis();
         try (Connection connection = open()) {
             beginImmediate(connection);
+            // SQLite writer contention must not consume the new delivery's lease.
+            long now = System.currentTimeMillis();
             try {
                 requireActiveSubscription(connection, consumerId, topic);
                 recoverExpiredDeliveries(connection, consumerId, topic, now);
@@ -213,6 +214,40 @@ public final class SqliteMessageStore {
         }
     }
 
+    public long nextWakeDelayMs(
+            String consumerId,
+            String topic,
+            long idleFallbackMs) {
+        long fallback = Math.max(1L, idleFallbackMs);
+        long now = System.currentTimeMillis();
+        try (Connection connection = open()) {
+            requireActiveSubscription(connection, consumerId, topic);
+
+            Long leaseDeadline = minimumTime(
+                    connection,
+                    consumerId,
+                    topic,
+                    STATUS_IN_FLIGHT,
+                    "lease_until_ms");
+            if (leaseDeadline != null) {
+                return boundedDelay(leaseDeadline - now, fallback);
+            }
+
+            Long retryAt = minimumTime(
+                    connection,
+                    consumerId,
+                    topic,
+                    STATUS_PENDING,
+                    "next_attempt_ms");
+            if (retryAt != null) {
+                return boundedDelay(retryAt - now, fallback);
+            }
+            return fallback;
+        } catch (SQLException e) {
+            throw storage("Cannot calculate next subscription wake-up", e);
+        }
+    }
+
     public AckOutcome ack(long deliveryId, String consumerId, AckStage stage) {
         if (stage == null || stage == AckStage.ACK_STAGE_UNSPECIFIED
                 || stage == AckStage.UNRECOGNIZED) {
@@ -220,9 +255,9 @@ public final class SqliteMessageStore {
                     StoreException.Kind.PRECONDITION,
                     "A concrete ACK stage is required");
         }
-        long now = System.currentTimeMillis();
         try (Connection connection = open()) {
             beginImmediate(connection);
+            long now = System.currentTimeMillis();
             try {
                 DeliveryMeta meta = readDeliveryMeta(connection, deliveryId);
                 validateDeliveryOwner(meta, consumerId);
@@ -280,9 +315,9 @@ public final class SqliteMessageStore {
             String consumerId,
             String reason,
             boolean retryable) {
-        long now = System.currentTimeMillis();
         try (Connection connection = open()) {
             beginImmediate(connection);
+            long now = System.currentTimeMillis();
             try {
                 DeliveryMeta meta = readDeliveryMeta(connection, deliveryId);
                 validateDeliveryOwner(meta, consumerId);
@@ -412,6 +447,12 @@ public final class SqliteMessageStore {
     public void backupTo(Path backupPath) {
         Path absoluteBackup = backupPath.toAbsolutePath().normalize();
         try {
+            if (databasePath.equals(absoluteBackup)
+                    || (Files.exists(absoluteBackup)
+                    && Files.isSameFile(databasePath, absoluteBackup))) {
+                throw new StoreException(StoreException.Kind.PRECONDITION,
+                        "Backup target must differ from the live database");
+            }
             Path parent = absoluteBackup.getParent();
             if (parent != null) {
                 Files.createDirectories(parent);
@@ -532,6 +573,14 @@ public final class SqliteMessageStore {
         try (Statement statement = connection.createStatement()) {
             statement.execute("PRAGMA foreign_keys=ON");
             statement.execute("PRAGMA busy_timeout=5000");
+            statement.execute("PRAGMA synchronous=FULL");
+        } catch (SQLException e) {
+            try {
+                connection.close();
+            } catch (SQLException closeError) {
+                e.addSuppressed(closeError);
+            }
+            throw e;
         }
         return connection;
     }
@@ -773,6 +822,35 @@ public final class SqliteMessageStore {
                 return result.next() ? result.getLong(1) : null;
             }
         }
+    }
+
+    private Long minimumTime(
+            Connection connection,
+            String consumerId,
+            String topic,
+            String status,
+            String column) throws SQLException {
+        String sql = "SELECT MIN(" + column + ") FROM deliveries "
+                + "WHERE consumer_id=? AND topic=? AND status=?";
+        try (PreparedStatement statement = connection.prepareStatement(sql)) {
+            statement.setString(1, consumerId);
+            statement.setString(2, topic);
+            statement.setString(3, status);
+            try (ResultSet result = statement.executeQuery()) {
+                if (!result.next()) {
+                    return null;
+                }
+                long value = result.getLong(1);
+                return result.wasNull() ? null : value;
+            }
+        }
+    }
+
+    private long boundedDelay(long delayMs, long fallbackMs) {
+        if (delayMs <= 0L) {
+            return 1L;
+        }
+        return Math.min(delayMs, fallbackMs);
     }
 
     private DeliveryRecord readDelivery(Connection connection, long deliveryId)

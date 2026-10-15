@@ -33,7 +33,7 @@ public final class AuditConsumerMain {
                 300,
                 handler,
                 ConsumerFailureInjector.NONE)) {
-            Runtime.getRuntime().addShutdownHook(new Thread(consumer::stop));
+            Runtime.getRuntime().addShutdownHook(new Thread(consumer::close));
             consumer.run();
         }
     }

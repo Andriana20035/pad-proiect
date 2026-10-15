@@ -12,9 +12,8 @@ public record AppConfig(
         long leaseMs,
         long retryBaseMs,
         long retryMaxMs,
-        long subscribePollMs,
+        long crossNodeRefreshMs,
         int unaryDeadlineMs,
-        int serverThreads,
         List<Endpoint> endpoints) {
 
     public static AppConfig fromSystemProperties() {
@@ -26,9 +25,11 @@ public record AppConfig(
                 longValue("lab2.leaseMs", "LAB2_LEASE_MS", 1500),
                 longValue("lab2.retryBaseMs", "LAB2_RETRY_BASE_MS", 400),
                 longValue("lab2.retryMaxMs", "LAB2_RETRY_MAX_MS", 4000),
-                longValue("lab2.pollMs", "LAB2_POLL_MS", 100),
+                longValue(
+                        "lab2.crossNodeRefreshMs",
+                        "LAB2_CROSS_NODE_REFRESH_MS",
+                        1000),
                 integer("lab2.deadlineMs", "LAB2_DEADLINE_MS", 2000),
-                integer("lab2.serverThreads", "LAB2_SERVER_THREADS", 8),
                 parseEndpoints(value(
                         "lab2.endpoints",
                         "LAB2_ENDPOINTS",
@@ -44,9 +45,8 @@ public record AppConfig(
                 leaseMs,
                 retryBaseMs,
                 retryMaxMs,
-                subscribePollMs,
+                crossNodeRefreshMs,
                 unaryDeadlineMs,
-                serverThreads,
                 endpoints);
     }
 
@@ -59,9 +59,8 @@ public record AppConfig(
                 leaseMs,
                 retryBaseMs,
                 retryMaxMs,
-                subscribePollMs,
+                crossNodeRefreshMs,
                 unaryDeadlineMs,
-                serverThreads,
                 endpoints);
     }
 
@@ -74,9 +73,8 @@ public record AppConfig(
                 leaseMs,
                 retryBaseMs,
                 retryMaxMs,
-                subscribePollMs,
+                crossNodeRefreshMs,
                 unaryDeadlineMs,
-                serverThreads,
                 List.copyOf(newEndpoints));
     }
 

@@ -36,7 +36,7 @@ public final class InventoryConsumerMain {
                 300,
                 handler,
                 failureInjector)) {
-            Runtime.getRuntime().addShutdownHook(new Thread(consumer::stop));
+            Runtime.getRuntime().addShutdownHook(new Thread(consumer::close));
             consumer.run();
         }
     }

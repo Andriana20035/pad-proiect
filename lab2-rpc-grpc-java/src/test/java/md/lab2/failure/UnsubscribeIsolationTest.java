@@ -69,6 +69,7 @@ class UnsubscribeIsolationTest {
                 assertEquals(Status.Code.FAILED_PRECONDITION, error.getStatus().getCode());
             } finally {
                 channel.shutdownNow();
+                channel.awaitTermination(2, TimeUnit.SECONDS);
             }
         }
     }

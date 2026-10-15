@@ -123,6 +123,14 @@ public final class ConsumerLocalStore {
         Connection connection = DriverManager.getConnection("jdbc:sqlite:" + databasePath);
         try (Statement statement = connection.createStatement()) {
             statement.execute("PRAGMA busy_timeout=5000");
+            statement.execute("PRAGMA synchronous=FULL");
+        } catch (SQLException e) {
+            try {
+                connection.close();
+            } catch (SQLException closeError) {
+                e.addSuppressed(closeError);
+            }
+            throw e;
         }
         return connection;
     }

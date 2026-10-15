@@ -6,18 +6,31 @@ sequenceDiagram
     participant A as Audit
 
     P->>B: CreateTopic(orders.v1) [unary]
+    B->>DB: create topic
+    B-->>P: TopicReply
+
+    I->>B: Subscribe(inventory, orders.v1) [server-streaming]
+    A->>B: Subscribe(audit, orders.v1) [server-streaming]
+    B->>DB: activate subscriptions
+
     P->>B: Publish(message) [unary]
-    B->>DB: persist message + deliveries/consumer
+    B->>DB: persist message + delivery per active consumer
     DB-->>B: commit
     B-->>P: PublishReply accepted=true
-    Note over P,B: confirmarea inseamna persistat la broker, nu procesat de consumatori
 
-    I->>B: Subscribe(inventory, orders.v1) [server stream]
-    A->>B: Subscribe(audit, orders.v1) [server stream]
+    Note over P,B: Publish confirmat inseamna persistat la broker,<br/>nu procesat de consumatori
+
     B-->>I: Delivery attempt=1
     B-->>A: Delivery attempt=1
+
     I->>B: ACK RECEIVED
-    I->>I: effect + dedup in tranzactie locala
+    I->>I: local effect + dedup in transaction
     I->>B: ACK PROCESSED
-    I->>B: ACK PERSISTED (final)
-    A->>B: ACK RECEIVED -> PROCESSED -> PERSISTED
+    I->>B: ACK PERSISTED
+
+    A->>B: ACK RECEIVED
+    A->>A: audit + dedup
+    A->>B: ACK PROCESSED
+    A->>B: ACK PERSISTED
+
+    B->>DB: mark deliveries COMPLETED

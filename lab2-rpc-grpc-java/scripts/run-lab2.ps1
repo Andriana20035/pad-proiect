@@ -1,7 +1,13 @@
 param(
     [ValidateSet("tests", "package", "demo", "broker-a", "broker-b", "inventory", "inventory-crash", "audit", "topic", "producer", "backup", "stats")]
     [string]$Mode = "demo",
-    [string]$OrderId = "ORD-3001"
+    [string]$OrderId = "ORD-3001",
+    [string]$Endpoints = "localhost:50051,localhost:50052",
+    [string]$DataDirectory = "data",
+    [ValidateRange(1, 65535)]
+    [int]$PortA = 50051,
+    [ValidateRange(1, 65535)]
+    [int]$PortB = 50052
 )
 
 $ErrorActionPreference = "Stop"
@@ -18,32 +24,37 @@ if ($Mode -eq "package") {
     exit $LASTEXITCODE
 }
 
-mvn -q -DskipTests package
-if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-
 $Jar = Join-Path $ProjectRoot "target\lab2-rpc-grpc-1.0.0-all.jar"
-$Endpoints = "localhost:50051,localhost:50052"
+# Reuse the built JAR: running brokers may hold it open on Windows.
+if (-not (Test-Path -LiteralPath $Jar -PathType Leaf)) {
+    mvn -q -DskipTests package
+    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+}
+New-Item -ItemType Directory -Force $DataDirectory | Out-Null
+$BrokerDb = Join-Path $DataDirectory "lab2-broker.db"
+$InventoryDb = Join-Path $DataDirectory "inventory-rpc.db"
+$AuditDb = Join-Path $DataDirectory "audit-rpc.db"
+$CrashMarker = Join-Path $DataDirectory "inventory-hard-crash.marker"
 
 switch ($Mode) {
     "demo" {
-        New-Item -ItemType Directory -Force "data" | Out-Null
-        & java -cp $Jar md.lab2.demo.DemoMain 2>&1 | Tee-Object -FilePath "data/demo.log"
+        & java -cp $Jar md.lab2.demo.DemoMain | Tee-Object -FilePath (Join-Path $DataDirectory "demo.log")
     }
     "broker-a" {
-        & java "-Dlab2.port=50051" "-Dlab2.node=broker-a" "-Dlab2.db=data/lab2-broker.db" -cp $Jar md.lab2.server.BrokerMain
+        & java "-Dlab2.port=$PortA" "-Dlab2.node=broker-a" "-Dlab2.db=$BrokerDb" -cp $Jar md.lab2.server.BrokerMain
     }
     "broker-b" {
-        & java "-Dlab2.port=50052" "-Dlab2.node=broker-b" "-Dlab2.db=data/lab2-broker.db" -cp $Jar md.lab2.server.BrokerMain
+        & java "-Dlab2.port=$PortB" "-Dlab2.node=broker-b" "-Dlab2.db=$BrokerDb" -cp $Jar md.lab2.server.BrokerMain
     }
     "inventory" {
-        & java "-Dlab2.endpoints=$Endpoints" -cp $Jar md.lab2.demo.InventoryConsumerMain
+        & java "-Dlab2.endpoints=$Endpoints" "-Dlab2.inventoryDb=$InventoryDb" -cp $Jar md.lab2.demo.InventoryConsumerMain
     }
     "inventory-crash" {
-        Remove-Item "data\inventory-hard-crash.marker" -ErrorAction SilentlyContinue
-        & java "-Dlab2.hardCrashOnce=true" "-Dlab2.endpoints=$Endpoints" -cp $Jar md.lab2.demo.InventoryConsumerMain
+        Remove-Item -LiteralPath $CrashMarker -ErrorAction SilentlyContinue
+        & java "-Dlab2.hardCrashOnce=true" "-Dlab2.endpoints=$Endpoints" "-Dlab2.inventoryDb=$InventoryDb" "-Dlab2.crashMarker=$CrashMarker" -cp $Jar md.lab2.demo.InventoryConsumerMain
     }
     "audit" {
-        & java "-Dlab2.endpoints=$Endpoints" -cp $Jar md.lab2.demo.AuditConsumerMain
+        & java "-Dlab2.endpoints=$Endpoints" "-Dlab2.auditDb=$AuditDb" -cp $Jar md.lab2.demo.AuditConsumerMain
     }
     "topic" {
         & java "-Dlab2.endpoints=$Endpoints" -cp $Jar md.lab2.demo.TopicAdminMain orders.v1
@@ -52,10 +63,12 @@ switch ($Mode) {
         & java "-Dlab2.endpoints=$Endpoints" -cp $Jar md.lab2.demo.OrderProducerMain $OrderId
     }
     "backup" {
-        New-Item -ItemType Directory -Force "data\backups" | Out-Null
-        & java "-Dlab2.db=data/lab2-broker.db" -cp $Jar md.lab2.tools.StoreMaintenanceMain backup "data/backups/lab2-backup.db"
+        $BackupDirectory = Join-Path $DataDirectory "backups"
+        New-Item -ItemType Directory -Force $BackupDirectory | Out-Null
+        & java "-Dlab2.db=$BrokerDb" -cp $Jar md.lab2.tools.StoreMaintenanceMain backup (Join-Path $BackupDirectory "lab2-backup.db")
     }
     "stats" {
-        & java "-Dlab2.db=data/lab2-broker.db" -cp $Jar md.lab2.tools.StoreMaintenanceMain stats
+        & java "-Dlab2.db=$BrokerDb" -cp $Jar md.lab2.tools.StoreMaintenanceMain stats
     }
 }
+exit $LASTEXITCODE
