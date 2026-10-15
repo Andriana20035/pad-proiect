@@ -1,0 +1,37 @@
+services:
+  broker-a:
+    build:
+      context: .
+      dockerfile: deployment/Dockerfile
+    command:
+      - -Dlab2.port=50051
+      - -Dlab2.node=broker-a
+      - -Dlab2.db=/data/lab2-broker.db
+      - -cp
+      - /app/lab2.jar
+      - md.lab2.server.BrokerMain
+    entrypoint: ["java"]
+    ports:
+      - "50051:50051"
+    volumes:
+      - lab2data:/data
+
+  broker-b:
+    build:
+      context: .
+      dockerfile: deployment/Dockerfile
+    command:
+      - -Dlab2.port=50052
+      - -Dlab2.node=broker-b
+      - -Dlab2.db=/data/lab2-broker.db
+      - -cp
+      - /app/lab2.jar
+      - md.lab2.server.BrokerMain
+    entrypoint: ["java"]
+    ports:
+      - "50052:50052"
+    volumes:
+      - lab2data:/data
+
+volumes:
+  lab2data:

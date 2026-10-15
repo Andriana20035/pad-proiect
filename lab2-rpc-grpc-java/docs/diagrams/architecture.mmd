@@ -1,0 +1,14 @@
+flowchart LR
+    P[Order Producer] -->|Unary Publish gRPC| LB[Client endpoint pool\nround-robin]
+    LB --> A[Broker A :50051]
+    LB --> B[Broker B :50052]
+    A --> DB[(SQLite WAL\nmessages/subscriptions/deliveries/DLQ)]
+    B --> DB
+    DB -->|Server-streaming Subscribe| I[Inventory Consumer]
+    DB -->|Server-streaming Subscribe| U[Audit Consumer]
+    I -->|Unary ACK/NACK| A
+    I -->|reconnect/failover| B
+    U -->|Unary ACK/NACK| A
+    U -->|reconnect/failover| B
+    I --> IDB[(Inventory local SQLite\neffect + dedup)]
+    U --> ADB[(Audit local SQLite\naudit + dedup)]

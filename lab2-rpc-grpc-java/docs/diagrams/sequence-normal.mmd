@@ -1,0 +1,23 @@
+sequenceDiagram
+    participant P as Producer
+    participant B as gRPC Broker
+    participant DB as SQLite
+    participant I as Inventory
+    participant A as Audit
+
+    P->>B: CreateTopic(orders.v1) [unary]
+    P->>B: Publish(message) [unary]
+    B->>DB: persist message + deliveries/consumer
+    DB-->>B: commit
+    B-->>P: PublishReply accepted=true
+    Note over P,B: confirmarea inseamna persistat la broker, nu procesat de consumatori
+
+    I->>B: Subscribe(inventory, orders.v1) [server stream]
+    A->>B: Subscribe(audit, orders.v1) [server stream]
+    B-->>I: Delivery attempt=1
+    B-->>A: Delivery attempt=1
+    I->>B: ACK RECEIVED
+    I->>I: effect + dedup in tranzactie locala
+    I->>B: ACK PROCESSED
+    I->>B: ACK PERSISTED (final)
+    A->>B: ACK RECEIVED -> PROCESSED -> PERSISTED
