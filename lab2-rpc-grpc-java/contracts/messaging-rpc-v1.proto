@@ -1,0 +1,161 @@
+syntax = "proto3";
+
+package lab2.rpc.v1;
+
+option java_package = "md.lab2.rpc.v1";
+option java_multiple_files = true;
+option java_outer_classname = "MessagingRpcProto";
+
+service MessagingService {
+  rpc CreateTopic(CreateTopicRequest) returns (TopicReply);
+  rpc Publish(PublishRequest) returns (PublishReply);
+  rpc Subscribe(SubscribeRequest) returns (stream Delivery);
+  rpc Unsubscribe(UnsubscribeRequest) returns (OperationReply);
+  rpc Ack(AckRequest) returns (AckReply);
+  rpc Nack(NackRequest) returns (NackReply);
+  rpc GetStats(StatsRequest) returns (StatsReply);
+  rpc ListDlq(DlqRequest) returns (DlqReply);
+  rpc Health(HealthRequest) returns (HealthReply);
+}
+
+message Envelope {
+  string id = 1;
+  string timestamp = 2;
+  string correlation_id = 3;
+  string schema_version = 4;
+  string type = 5;
+  string key = 6;
+  bytes payload = 7;
+}
+
+message CreateTopicRequest {
+  string name = 1;
+}
+
+message TopicReply {
+  string name = 1;
+  bool created = 2;
+  string broker_node = 3;
+}
+
+message PublishRequest {
+  string topic = 1;
+  Envelope message = 2;
+}
+
+message PublishReply {
+  bool accepted = 1;
+  bool duplicate = 2;
+  int32 routed_count = 3;
+  string message_id = 4;
+  string broker_node = 5;
+  string detail = 6;
+}
+
+message SubscribeRequest {
+  string consumer_id = 1;
+  string topic = 2;
+}
+
+message UnsubscribeRequest {
+  string consumer_id = 1;
+  string topic = 2;
+}
+
+message Delivery {
+  int64 delivery_id = 1;
+  string topic = 2;
+  string consumer_id = 3;
+  Envelope message = 4;
+  int32 attempt = 5;
+  int64 lease_deadline_epoch_ms = 6;
+  string broker_node = 7;
+}
+
+enum AckStage {
+  ACK_STAGE_UNSPECIFIED = 0;
+  RECEIVED = 1;
+  PROCESSED = 2;
+  PERSISTED = 3;
+}
+
+message AckRequest {
+  int64 delivery_id = 1;
+  string consumer_id = 2;
+  AckStage stage = 3;
+}
+
+message AckReply {
+  bool accepted = 1;
+  bool completed = 2;
+  AckStage stored_stage = 3;
+  string detail = 4;
+  string broker_node = 5;
+}
+
+message NackRequest {
+  int64 delivery_id = 1;
+  string consumer_id = 2;
+  string reason = 3;
+  bool retryable = 4;
+}
+
+message NackReply {
+  bool accepted = 1;
+  bool moved_to_dlq = 2;
+  int64 retry_after_ms = 3;
+  int32 attempt = 4;
+  string detail = 5;
+  string broker_node = 6;
+}
+
+message OperationReply {
+  bool ok = 1;
+  string detail = 2;
+  string broker_node = 3;
+}
+
+message StatsRequest {
+  string topic = 1;
+  string consumer_id = 2;
+}
+
+message StatsReply {
+  int64 messages = 1;
+  int64 pending = 2;
+  int64 in_flight = 3;
+  int64 completed = 4;
+  int64 dlq = 5;
+  int64 active_subscriptions = 6;
+  string broker_node = 7;
+}
+
+message DlqRequest {
+  string topic = 1;
+  string consumer_id = 2;
+}
+
+message DlqEntry {
+  int64 delivery_id = 1;
+  string message_id = 2;
+  string consumer_id = 3;
+  string topic = 4;
+  int32 attempts = 5;
+  string reason = 6;
+  string moved_at = 7;
+}
+
+message DlqReply {
+  repeated DlqEntry entries = 1;
+  string broker_node = 2;
+}
+
+message HealthRequest {}
+
+message HealthReply {
+  bool serving = 1;
+  string broker_node = 2;
+  int32 port = 3;
+  string transport = 4;
+  string storage = 5;
+}

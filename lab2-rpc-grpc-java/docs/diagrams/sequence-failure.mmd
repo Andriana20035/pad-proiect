@@ -1,0 +1,24 @@
+sequenceDiagram
+    participant P as Producer
+    participant BA as Broker A
+    participant DB as SQLite broker
+    participant I as Inventory
+    participant IDB as SQLite Inventory
+    participant BB as Broker B
+
+    P->>BA: Publish(messageId=X)
+    BA->>DB: commit message + delivery
+    BA-->>P: accepted
+    I->>BA: Subscribe
+    BA-->>I: Delivery X attempt=1
+    I->>BA: ACK RECEIVED
+    I->>IDB: commit local effect + X as processed
+    I->>BA: ACK PROCESSED
+    I--xBA: crash/disconnect BEFORE ACK PERSISTED
+    BA->>DB: lease expires, schedule retry with backoff
+    I->>BB: reconnect + Subscribe
+    BB->>DB: claim same X, attempt=2
+    BB-->>I: Delivery X attempt=2
+    I->>IDB: X already processed -> DEDUP_SKIP
+    I->>BB: ACK PERSISTED
+    BB->>DB: status=COMPLETED
