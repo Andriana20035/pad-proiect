@@ -11,6 +11,10 @@ unary pentru operatii scurte si `Subscribe` server-streaming pentru livrari de l
 Starea brokerului este persistata in SQLite WAL. Fiecare mesaj are o livrare separata pentru
 fiecare abonat activ. O livrare este finalizata numai la `ACK PERSISTED`.
 
+Stream-urile `Subscribe` ruleaza pe un executor elastic separat de executorul RPC-urilor
+unary (`Publish/Ack/Nack/Health`). `SubscriptionNotifier` trezeste workerii la schimbari;
+fallback-ul `crossNodeRefreshMs` detecteaza modificarile scrise in SQLite de alt proces broker.
+
 Retry-ul este controlat de aplicatie: o livrare in-flight are lease; la expirare sau NACK
 retryable revine in PENDING cu backoff exponential. Dupa 3 incercari intra in DLQ. Consumerul
 persista local efectul si messageId in aceeasi tranzactie pentru deduplicare dupa restart.
@@ -32,6 +36,9 @@ reduce polling-ul clientului. SQLite ofera persistenta si backup simplu. Retry, 
 idempotenta sunt vizibile si testabile.
 
 ## Limita cunoscuta
+Solutia nu este complet non-blocking: fiecare `Subscribe` activ foloseste in continuare
+un worker din executorul elastic.
+
 SQLite partajata intre doua noduri este o simplificare didactica, nu o arhitectura HA de
 productie. Un stream deja deschis nu este reechilibrat intre noduri. Nu promitem exactly-once
 pentru efecte externe; garantia practica este at-least-once cu deduplicare persistenta si

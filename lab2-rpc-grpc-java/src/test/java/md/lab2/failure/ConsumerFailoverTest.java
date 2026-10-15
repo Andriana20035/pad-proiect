@@ -17,6 +17,7 @@ import java.time.Duration;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 
 class ConsumerFailoverTest {
     @TempDir
@@ -61,10 +62,10 @@ class ConsumerFailoverTest {
                         Duration.ofSeconds(3));
 
                 brokerA.close();
-                Thread.sleep(200);
 
-                try (ProducerClient producer = new ProducerClient(List.of(endpointB), 1000)) {
-                    producer.publishOrderCreated("orders.v1", "ORD-FAILOVER", "{}");
+                try (ProducerClient producer = new ProducerClient(endpoints, 1000)) {
+                    assertEquals("broker-b", producer.publishOrderCreated(
+                            "orders.v1", "ORD-FAILOVER", "{}").getBrokerNode());
                     TestSupport.waitFor(
                             () -> producer.stats("orders.v1", "inventory-service")
                                     .getCompleted() == 1,
@@ -72,9 +73,11 @@ class ConsumerFailoverTest {
                 }
                 assertEquals(1, localStore.effectCount("ORD-FAILOVER"));
             } finally {
-                consumer.stop();
+                consumer.close();
                 thread.interrupt();
-                thread.join(1500);
+                thread.join(3000);
+                assertFalse(thread.isAlive(),
+                        "Failover consumer thread must terminate before temp directory cleanup");
             }
         } finally {
             brokerA.close();

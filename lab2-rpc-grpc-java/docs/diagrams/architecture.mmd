@@ -1,14 +1,22 @@
 flowchart LR
-    P[Order Producer] -->|Unary Publish gRPC| LB[Client endpoint pool\nround-robin]
+    P[Order Producer] -->|Unary gRPC / HTTP2| LB[Client endpoint pool<br/>round-robin]
     LB --> A[Broker A :50051]
     LB --> B[Broker B :50052]
-    A --> DB[(SQLite WAL\nmessages/subscriptions/deliveries/DLQ)]
-    B --> DB
-    DB -->|Server-streaming Subscribe| I[Inventory Consumer]
-    DB -->|Server-streaming Subscribe| U[Audit Consumer]
-    I -->|Unary ACK/NACK| A
-    I -->|reconnect/failover| B
-    U -->|Unary ACK/NACK| A
-    U -->|reconnect/failover| B
-    I --> IDB[(Inventory local SQLite\neffect + dedup)]
-    U --> ADB[(Audit local SQLite\naudit + dedup)]
+
+    subgraph Runtime[Executori separati in fiecare broker A/B]
+        RPC[RPC executor<br/>Publish / Ack / Nack / Health]
+        N[SubscriptionNotifier]
+        SUB[Subscription executor elastic<br/>workeri Subscribe]
+        RPC -->|notifica schimbari| N
+        N -->|trezeste workerii| SUB
+    end
+
+    A --> RPC
+    B --> RPC
+    A --> SUB
+    B --> SUB
+    RPC -->|persistenta| DB[(SQLite WAL<br/>messages / subscriptions / deliveries / DLQ)]
+    SUB -->|citeste / actualizeaza livrari<br/>fallback crossNodeRefreshMs| DB
+    SUB -->|Broker: server-streaming Subscribe| C[Inventory / Audit consumers<br/>reconnect si failover A/B]
+    C -->|ACK/NACK unary catre broker A/B| RPC
+    C --> LOCAL[(SQLite local per consumer<br/>efect + deduplicare)]

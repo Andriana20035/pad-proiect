@@ -16,6 +16,7 @@ import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -38,6 +39,8 @@ class LoadBalancingConcurrencyTest {
 
             try (ProducerClient producer = new ProducerClient(endpoints, 1500)) {
                 producer.createTopic("orders.v1");
+                assertEquals("broker-b", producer.health().getBrokerNode());
+                assertEquals("broker-a", producer.health().getBrokerNode());
                 brokerA.store().activateSubscription("sink-service", "orders.v1");
 
                 ExecutorService workers = Executors.newFixedThreadPool(8);
@@ -69,6 +72,7 @@ class LoadBalancingConcurrencyTest {
                     assertTrue(nodeB > 0, "broker-b should receive traffic");
                 } finally {
                     workers.shutdownNow();
+                    assertTrue(workers.awaitTermination(3, TimeUnit.SECONDS));
                 }
             }
         }

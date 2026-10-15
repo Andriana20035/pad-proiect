@@ -35,6 +35,7 @@ java -cp target/lab2-rpc-grpc-1.0.0-all.jar md.lab2.demo.DemoMain
 
 Demo-ul porneste doua broker nodes cu o baza temporara, 2 consumers si producerul.
 Inventory face o singura cadere controlata dupa efectul local.
+Echivalent: `java -jar target/lab2-rpc-grpc-1.0.0-all.jar`.
 
 ## 4. Procese separate
 
@@ -108,13 +109,14 @@ Cu ambii brokeri porniti si consumerii activi:
 
 1. Opreste Broker A (Ctrl+C).
 2. Nu opri consumerii.
-3. ConsumerClient va primi UNAVAILABLE, va aplica backoff si va selecta urmatorul endpoint.
-4. Trimite un order nou; Broker B il accepta.
-5. Reporneste Broker A. Producerul continua round-robin.
+3. Stream-ul se inchide (de exemplu UNAVAILABLE/CANCELLED); ConsumerClient aplica backoff si selecteaza urmatorul endpoint.
+4. Trimite un order nou; Broker B il accepta dupa retry-ul endpoint-ului indisponibil.
+5. Reporneste Broker A. Un ProducerClient persistent continua round-robin; fiecare nou
+   proces OrderProducerMain reseteaza cursorul si foloseste si CreateTopic separat, prin admin.
 
 ## 7. Test topic gresit
 
-In `OrderProducerMain`, schimba temporar topicul la `orders.v999` fara CreateTopic sau
+Porneste `OrderProducerMain` cu `-Dlab2.topic=orders.v999` fara CreateTopic sau
 foloseste testul `TopicRoutingTest`. Sistemul trebuie sa raspunda `NOT_FOUND`; nu trebuie sa
 creeze implicit un topic la publish.
 
@@ -129,6 +131,23 @@ java -Dlab2.db=data/lab2-broker.db `
 
 Testul `BackupRestoreTest` verifica automat ca backup-ul poate fi deschis separat.
 
+### Restore fara suprascrierea starii curente
+
+1. Opreste AMBII brokeri si consumerii; nu opri alte procese Java.
+2. Pastreaza baza curenta si sidecar-urile ei. Copiaza backup-ul validat la o cale noua:
+
+```powershell
+Copy-Item -LiteralPath data/backups/lab2-backup.db -Destination data/restored-broker.db
+java -Dlab2.db=data/restored-broker.db -Dlab2.port=50051 -Dlab2.node=broker-a `
+  -cp target/lab2-rpc-grpc-1.0.0-all.jar md.lab2.server.BrokerMain
+```
+
+3. Porneste al doilea broker cu ACEEASI cale noua si port 50052, apoi consumerii.
+4. Verifica `StoreMaintenanceMain stats` cu `-Dlab2.db=data/restored-broker.db`.
+   Daca backup-ul contine livrari IN_FLIGHT, acestea se recupereaza prin lease + backoff.
+   Backup-ul brokerului nu include bazele locale de deduplicare ale consumerilor; pentru
+   recuperarea intregii demonstratii, pastreaza separat si bazele lor, cu procesele oprite.
+
 ## 9. Ce loguri arati profesoarei
 
 Urmariti acelasi `messageId` si `correlationId` prin:
@@ -140,4 +159,41 @@ PERSISTED -> DELIVER attempt=1 -> ACK_RECEIVED -> LOCAL_EFFECT_PERSISTED
 ```
 
 Pentru load balancing, doua Publish consecutive trebuie sa arate alternativ `broker-a` si
-`broker-b` cand ambele sunt disponibile.
+`broker-b` cand ambele sunt disponibile si folosesti ACEEASI instanta ProducerClient (DemoMain).
+
+## 10. Scriptul unificat
+
+```powershell
+.\scripts\run-lab2.ps1 -Mode package
+.\scripts\run-lab2.ps1 -Mode broker-a
+# In alte terminale, pe rand:
+.\scripts\run-lab2.ps1 -Mode broker-b
+.\scripts\run-lab2.ps1 -Mode topic
+.\scripts\run-lab2.ps1 -Mode inventory
+.\scripts\run-lab2.ps1 -Mode audit
+.\scripts\run-lab2.ps1 -Mode producer -OrderId ORD-3002
+```
+
+Moduri: `tests`, `package`, `demo`, `broker-a`, `broker-b`, `topic`, `inventory`,
+`inventory-crash`, `audit`, `producer`, `backup`, `stats`. Scriptul reutilizeaza JAR-ul
+construit; dupa modificari de cod, opreste procesele Lab 2 si ruleaza explicit `-Mode package`.
+Astfel nu incearca sa suprascrie un JAR tinut deschis de brokerii Windows.
+Pentru o sesiune izolata foloseste `-DataDirectory data/demo-nou`,
+`-PortA 51051 -PortB 51052` pentru brokeri si `-Endpoints localhost:51051,localhost:51052`
+pentru clienti. `inventory-crash` reseteaza numai markerul din acel DataDirectory.
+
+Daca politica PowerShell blocheaza `.ps1`, foloseste pentru comanda respectiva:
+`powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\verify-deliverables.ps1`.
+Nu este necesara schimbarea permanenta a politicii sistemului.
+
+## 11. Verificari separate pentru evaluare
+
+```powershell
+mvn "-Dtest=ManySubscribersDoNotStarveUnaryRpcTest" test
+mvn "-Dtest=ConsumerFailoverTest" test
+.\scripts\verify-deliverables.ps1
+```
+
+Primul test pastreaza 12 subscribers si verifica active=12, Health, Publish accepted,
+routedCount=12, completed=12 si DLQ=0. Nu dezactiva @TempDir cleanup.
+`Health.serving` este liveness RPC, nu un certificat de integritate/write-readiness SQLite.

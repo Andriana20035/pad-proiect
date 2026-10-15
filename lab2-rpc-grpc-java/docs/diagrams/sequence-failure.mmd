@@ -6,10 +6,13 @@ sequenceDiagram
     participant IDB as SQLite Inventory
     participant BB as Broker B
 
+    P->>BA: CreateTopic(orders.v1)
+    BA->>DB: create topic
+    I->>BA: Subscribe(inventory, orders.v1)
+    BA->>DB: activate subscription
     P->>BA: Publish(messageId=X)
     BA->>DB: commit message + delivery
     BA-->>P: accepted
-    I->>BA: Subscribe
     BA-->>I: Delivery X attempt=1
     I->>BA: ACK RECEIVED
     I->>IDB: commit local effect + X as processed

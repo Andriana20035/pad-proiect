@@ -13,6 +13,15 @@ target/
 *.db-journal
 *.log
 
+# Local credentials
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.jks
+
 # OS/editor
 .DS_Store
 Thumbs.db

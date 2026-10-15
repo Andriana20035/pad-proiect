@@ -22,9 +22,8 @@ public final class TestSupport {
                 250,
                 80,
                 250,
-                20,
+                100,
                 1000,
-                8,
                 List.of(new Endpoint("localhost", 1)));
     }
 

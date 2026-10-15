@@ -57,8 +57,8 @@ public final class ConsumerClient implements Runnable, AutoCloseable {
         while (running && !Thread.currentThread().isInterrupted()) {
             Endpoint endpoint = endpoints.next();
             currentEndpoint = endpoint;
-            ManagedChannel channel = channels.channel(endpoint);
             try {
+                ManagedChannel channel = channels.channel(endpoint);
                 CorrelatedLog.event(
                         consumerId,
                         "CONNECT",
@@ -73,10 +73,9 @@ public final class ConsumerClient implements Runnable, AutoCloseable {
                                 .setConsumerId(consumerId)
                                 .setTopic(topic)
                                 .build());
-                consecutiveFailures = 0;
-
                 while (running && deliveries.hasNext()) {
                     Delivery delivery = deliveries.next();
+                    consecutiveFailures = 0;
                     handleDelivery(endpoint, delivery);
                 }
             } catch (SimulatedConsumerCrashException e) {
@@ -167,24 +166,26 @@ public final class ConsumerClient implements Runnable, AutoCloseable {
                         + " broker=" + delivery.getBrokerNode());
         ack(endpoint, delivery, AckStage.RECEIVED);
 
+        ProcessResult result;
         try {
-            ProcessResult result = handler.process(delivery.getMessage());
-            ack(endpoint, delivery, AckStage.PROCESSED);
-            failureInjector.afterLocalPersist(delivery, result);
-            ack(endpoint, delivery, AckStage.PERSISTED);
-            CorrelatedLog.event(
-                    consumerId,
-                    "COMPLETED",
-                    delivery.getMessage(),
-                    "deliveryId=" + delivery.getDeliveryId()
-                            + " applied=" + result.applied());
-        } catch (SimulatedConsumerCrashException e) {
-            throw e;
+            result = handler.process(delivery.getMessage());
         } catch (ProcessingException e) {
             nack(endpoint, delivery, e.getMessage(), e.retryable());
+            return;
         } catch (RuntimeException e) {
             nack(endpoint, delivery, e.getMessage(), true);
+            return;
         }
+        // Transport errors at ACK must reconnect, rather than NACK a successful effect.
+        ack(endpoint, delivery, AckStage.PROCESSED);
+        failureInjector.afterLocalPersist(delivery, result);
+        ack(endpoint, delivery, AckStage.PERSISTED);
+        CorrelatedLog.event(
+                consumerId,
+                "COMPLETED",
+                delivery.getMessage(),
+                "deliveryId=" + delivery.getDeliveryId()
+                        + " applied=" + result.applied());
     }
 
     private void ack(Endpoint endpoint, Delivery delivery, AckStage stage) {

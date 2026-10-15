@@ -3,6 +3,7 @@ package md.lab2.contract;
 import io.grpc.MethodDescriptor;
 import md.lab2.rpc.v1.AckStage;
 import md.lab2.rpc.v1.MessagingServiceGrpc;
+import md.lab2.rpc.v1.Envelope;
 import org.junit.jupiter.api.Test;
 
 import java.nio.file.Files;
@@ -45,5 +46,20 @@ class ProtoContractTest {
         assertEquals(2, AckStage.PROCESSED.getNumber());
         assertEquals(3, AckStage.PERSISTED.getNumber());
         assertTrue(AckStage.PERSISTED.getNumber() > AckStage.PROCESSED.getNumber());
+    }
+
+    @Test
+    void everyAdministrativeMethodIsUnaryAndEnvelopeFieldNumbersAreStable() {
+        var service = MessagingServiceGrpc.getServiceDescriptor();
+        assertEquals(9, service.getMethods().size());
+        for (var method : service.getMethods()) {
+            assertEquals(method.getFullMethodName().endsWith("/Subscribe")
+                            ? MethodDescriptor.MethodType.SERVER_STREAMING : MethodDescriptor.MethodType.UNARY,
+                    method.getType(), method.getFullMethodName());
+        }
+        String[] fields = {"id", "timestamp", "correlation_id", "schema_version", "type", "key", "payload"};
+        for (int i = 0; i < fields.length; i++) {
+            assertEquals(fields[i], Envelope.getDescriptor().findFieldByNumber(i + 1).getName());
+        }
     }
 }
