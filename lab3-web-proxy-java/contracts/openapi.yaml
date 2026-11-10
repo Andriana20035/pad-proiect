@@ -1,0 +1,77 @@
+openapi: 3.0.3
+info:
+  title: PAD Lab 3 – Warehouse HTTP via Reverse Proxy
+  version: 1.0.0
+  description: >-
+    Local teaching API. XML/JSON selected by Accept header. GET responses can be cached
+    for 2s and served stale-if-error for up to 15s more. Admin endpoints are local only.
+servers:
+  - url: http://127.0.0.1:18080
+paths:
+  /api/orders:
+    get:
+      summary: List orders
+      responses:
+        '200': {description: Orders, content: {application/json: {schema: {type: array, items: {$ref: '#/components/schemas/Order'}}}, application/xml: {schema: {type: string}}}}
+        '429': {$ref: '#/components/responses/Overloaded'}
+        '503': {$ref: '#/components/responses/Unavailable'}
+  /api/orders/{id}:
+    parameters:
+      - {in: path, name: id, required: true, schema: {type: string, pattern: '^[A-Za-z0-9_-]{1,64}$'}}
+    get:
+      summary: Read order
+      responses:
+        '200': {description: Order, content: {application/json: {schema: {$ref: '#/components/schemas/Order'}}, application/xml: {schema: {type: string}}}}
+        '404': {description: Order not found}
+        '429': {$ref: '#/components/responses/Overloaded'}
+        '503': {$ref: '#/components/responses/Unavailable'}
+        '504': {description: Backend timed out}
+    put:
+      summary: Update order through an available DW and the shared storage service
+      parameters:
+        - {in: query, name: status, required: true, schema: {type: string, pattern: '^[A-Z_]{1,32}$'}}
+      responses:
+        '200': {description: Status saved in the shared storage service}
+        '400': {description: Invalid status}
+        '429': {$ref: '#/components/responses/Overloaded'}
+        '503': {description: No healthy DW or storage is unavailable}
+  /api/stats:
+    get:
+      summary: Warehouse statistics
+      responses:
+        '200': {description: JSON or XML statistics}
+        '429': {$ref: '#/components/responses/Overloaded'}
+        '503': {$ref: '#/components/responses/Unavailable'}
+  /health:
+    get:
+      summary: Proxy process liveness only
+      responses:
+        '200': {description: Proxy alive}
+  /metrics:
+    get:
+      summary: Rolling p50 p95 p99 and backend circuit/cache counters
+      responses:
+        '200': {description: JSON metrics}
+  /admin/cache/invalidate:
+    post:
+      summary: Local-only manual cache invalidation by path prefix
+      parameters:
+        - {in: query, name: prefix, required: false, schema: {type: string, default: /api/}}
+      responses:
+        '200': {description: Number of invalidated entries}
+        '400': {description: Invalid prefix}
+components:
+  schemas:
+    Order:
+      type: object
+      required: [orderId, status]
+      properties:
+        orderId: {type: string, example: ORD-2001}
+        status: {type: string, example: READY}
+  responses:
+    Overloaded:
+      description: Concurrency limit reached
+      headers:
+        Retry-After: {schema: {type: string}, description: Seconds until retry}
+    Unavailable:
+      description: No backend answered successfully and no usable stale cache entry

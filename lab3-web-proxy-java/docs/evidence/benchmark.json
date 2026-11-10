@@ -1,0 +1,83 @@
+{
+  "timestamp_utc": "2026-11-10T01:56:39.976716+00:00",
+  "environment": {
+    "python": "3.13.5",
+    "os": "Windows",
+    "arch": "AMD64"
+  },
+  "notes": "M\u0103sur\u0103tori locale ale laten\u021bei HTTP; nu reprezint\u0103 un SLA",
+  "results": [
+    {
+      "scenario": "normal / cache MISS",
+      "n": 80,
+      "concurrency": 4,
+      "p50_ms": 4.44,
+      "p95_ms": 26.36,
+      "p99_ms": 28.59,
+      "statuses": {
+        "200": 80
+      },
+      "cache": {
+        "MISS": 80
+      }
+    },
+    {
+      "scenario": "normal / cache HIT",
+      "n": 80,
+      "concurrency": 4,
+      "p50_ms": 1.63,
+      "p95_ms": 24.34,
+      "p99_ms": 26.85,
+      "statuses": {
+        "200": 80
+      },
+      "cache": {
+        "HIT": 80
+      }
+    },
+    {
+      "scenario": "one backend slow",
+      "n": 80,
+      "concurrency": 8,
+      "p50_ms": 7.34,
+      "p95_ms": 779.52,
+      "p99_ms": 786.75,
+      "statuses": {
+        "200": 80
+      },
+      "cache": {
+        "MISS": 80
+      }
+    },
+    {
+      "scenario": "one backend returns 503",
+      "n": 80,
+      "concurrency": 8,
+      "p50_ms": 5.77,
+      "p95_ms": 11.45,
+      "p99_ms": 26.25,
+      "statuses": {
+        "200": 80
+      },
+      "cache": {
+        "MISS": 80
+      }
+    },
+    {
+      "scenario": "both slow / load shedding",
+      "n": 80,
+      "concurrency": 36,
+      "p50_ms": 5.08,
+      "p95_ms": 757.02,
+      "p99_ms": 777.97,
+      "statuses": {
+        "429": 68,
+        "504": 12
+      },
+      "cache": {
+        "MISS": 12,
+        "-": 68
+      }
+    }
+  ]
+}

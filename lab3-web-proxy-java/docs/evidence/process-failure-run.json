@@ -1,0 +1,19 @@
+{
+  "timestamp_utc": "2026-11-10T01:57:38.644267+00:00",
+  "scenarios": {
+    "shared_state_before_failure": "PASS",
+    "dw_a_killed_and_dw_b_continues": "PASS",
+    "dw_a_restart_sees_shared_state": "PASS",
+    "storage_is_single_point_of_failure": "CONFIRMED",
+    "storage_restart_preserves_data": "PASS",
+    "correlation_id_in_dw_logs": "PASS"
+  },
+  "record_id": "ORD-TEST-1794275860",
+  "correlation_id": "process-test-1794275860",
+  "result": "PASS",
+  "dw_log_files": [
+    "target\\process-failure-logs\\dw-a-restarted.log",
+    "target\\process-failure-logs\\dw-a.log",
+    "target\\process-failure-logs\\dw-b.log"
+  ]
+}

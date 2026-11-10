@@ -1,0 +1,35 @@
+services:
+  storage:
+    build: .
+    command: ["storage", "9020"]
+    environment:
+      LAB3_BIND_HOST: "0.0.0.0"
+      LAB3_DATA_FILE: "/app/data/warehouse.properties"
+    volumes: ["warehouse-data:/app/data"]
+  backend-a:
+    build: .
+    command: ["backend", "9011", "dw-a"]
+    environment:
+      LAB3_BIND_HOST: "0.0.0.0"
+      LAB3_STORAGE_URL: "http://storage:9020"
+    ports: ["127.0.0.1:9011:9011"]
+    depends_on: [storage]
+  backend-b:
+    build: .
+    command: ["backend", "9012", "dw-b"]
+    environment:
+      LAB3_BIND_HOST: "0.0.0.0"
+      LAB3_STORAGE_URL: "http://storage:9020"
+    ports: ["127.0.0.1:9012:9012"]
+    depends_on: [storage]
+  proxy:
+    build: .
+    command: ["proxy"]
+    environment:
+      LAB3_BIND_HOST: "0.0.0.0"
+      LAB3_BACKENDS: "http://backend-a:9011,http://backend-b:9012"
+      LAB3_PROXY_PORT: "18080"
+    ports: ["127.0.0.1:18080:18080"]
+    depends_on: [backend-a, backend-b]
+volumes:
+  warehouse-data:
