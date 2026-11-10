@@ -1,0 +1,11 @@
+target/
+**/__pycache__/
+*.pyc
+*.class
+*.jar
+*.log
+data/
+.env
+.idea/
+.vscode/
+.DS_Store

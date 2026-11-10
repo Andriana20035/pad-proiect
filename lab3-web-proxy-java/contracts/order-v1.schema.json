@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.org/pad/lab3/order-v1.schema.json",
+  "title": "Lab 3 Order Read Model v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["orderId", "status"],
+  "properties": {
+    "orderId": {"type": "string", "pattern": "^[A-Za-z0-9_-]{1,64}$"},
+    "status": {"type": "string", "pattern": "^[A-Z_]{1,32}$"}
+  }
+}

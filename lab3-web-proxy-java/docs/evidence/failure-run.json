@@ -1,0 +1,134 @@
+{
+  "timestamp_utc": "2026-11-10T01:56:14.785757+00:00",
+  "environment": {
+    "python": "3.13.5",
+    "os": "Windows",
+    "arch": "AMD64"
+  },
+  "proxy": "http://127.0.0.1:18080",
+  "scenarios": {
+    "round_robin": {
+      "selected_a": 104,
+      "selected_b": 267,
+      "result": "PASS"
+    },
+    "cache_and_contract": {
+      "first": "MISS",
+      "second": "HIT",
+      "after_put": "MISS",
+      "put_status": 200,
+      "xml": "validated order and stats",
+      "result": "PASS"
+    },
+    "single_backend_unavailable": {
+      "injection": "DW A mode=fail -> HTTP 503",
+      "requests": 16,
+      "statuses": {
+        "200": 16
+      },
+      "breaker_A": "CLOSED",
+      "healthy_A": false,
+      "retries_total": 36,
+      "result": "PASS"
+    },
+    "recovery": {
+      "action": "DW A mode=ok; cooldown > 1.5s; GET half-open probe",
+      "breaker_A": "CLOSED",
+      "result": "PASS"
+    },
+    "synchronization_and_correlation": {
+      "same_response_on_both_dw": true,
+      "correlation": "lab3-check-1794275774785753200",
+      "result": "PASS"
+    },
+    "both_unavailable_stale": {
+      "injection": "DW A, DW B mode=fail; wait > cache TTL 2000 ms",
+      "http_status": 200,
+      "x_cache": "STALE",
+      "x_degraded": "stale-if-error",
+      "result": "PASS"
+    },
+    "both_slow_load_shed": {
+      "injection": "DW A, DW B mode=slow 900 ms; 72 requests, 42 threads",
+      "http_status_counts": {
+        "504": 12,
+        "429": 60
+      },
+      "proxy_max_in_flight": 12,
+      "rejected429_total": 188,
+      "observed_p50_ms": 3.732,
+      "observed_p95_ms": 753.175,
+      "observed_p99_ms": 777.709,
+      "result": "PASS"
+    }
+  },
+  "initial_metrics": {
+    "requests": 554,
+    "windowSize": 554,
+    "p50Ms": 4.52,
+    "p95Ms": 751.12,
+    "p99Ms": 780.581,
+    "cacheHit": 82,
+    "cacheMiss": 343,
+    "cacheStale": 1,
+    "rejected429": 128,
+    "retries": 36,
+    "upstreamFailures": 37,
+    "success2xx": 319,
+    "cacheSize": 311,
+    "inflight": 0,
+    "backends": [
+      {
+        "url": "http://127.0.0.1:9011",
+        "circuit": "OPEN",
+        "healthy": true,
+        "failures": 6,
+        "selected": 96
+      },
+      {
+        "url": "http://127.0.0.1:9012",
+        "circuit": "CLOSED",
+        "healthy": true,
+        "failures": 0,
+        "selected": 260
+      }
+    ],
+    "activeClients": [],
+    "cacheGeneration": 2
+  },
+  "final_metrics": {
+    "requests": 677,
+    "windowSize": 677,
+    "p50Ms": 3.732,
+    "p95Ms": 753.175,
+    "p99Ms": 777.709,
+    "cacheHit": 83,
+    "cacheMiss": 404,
+    "cacheStale": 2,
+    "rejected429": 188,
+    "retries": 49,
+    "upstreamFailures": 51,
+    "success2xx": 368,
+    "cacheSize": 45,
+    "inflight": 0,
+    "backends": [
+      {
+        "url": "http://127.0.0.1:9011",
+        "circuit": "OPEN",
+        "healthy": true,
+        "failures": 7,
+        "selected": 120
+      },
+      {
+        "url": "http://127.0.0.1:9012",
+        "circuit": "OPEN",
+        "healthy": true,
+        "failures": 7,
+        "selected": 299
+      }
+    ],
+    "activeClients": [],
+    "cacheGeneration": 4
+  },
+  "result": "PASS"
+}
