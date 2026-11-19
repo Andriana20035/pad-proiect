@@ -10,6 +10,7 @@ final class LatencyMetrics {
     final LongAdder cacheHit = new LongAdder();
     final LongAdder cacheMiss = new LongAdder();
     final LongAdder cacheStale = new LongAdder();
+    final LongAdder coalescedGet = new LongAdder();
     final LongAdder rejected = new LongAdder();
     final LongAdder retries = new LongAdder();
     final LongAdder upstreamFailures = new LongAdder();
@@ -33,7 +34,9 @@ final class LatencyMetrics {
           + ",\"p95Ms\":" + String.format(java.util.Locale.ROOT,"%.3f",percentile(copy,.95)/1000.0)
           + ",\"p99Ms\":" + String.format(java.util.Locale.ROOT,"%.3f",percentile(copy,.99)/1000.0)
           + ",\"cacheHit\":" + cacheHit.sum() + ",\"cacheMiss\":" + cacheMiss.sum()
-          + ",\"cacheStale\":" + cacheStale.sum() + ",\"rejected429\":" + rejected.sum()
+          + ",\"cacheStale\":" + cacheStale.sum()
+          + ",\"coalescedGet\":" + coalescedGet.sum()
+          + ",\"rejected429\":" + rejected.sum()
           + ",\"retries\":" + retries.sum() + ",\"upstreamFailures\":" + upstreamFailures.sum()
           + ",\"success2xx\":" + successful.sum() + ",\"cacheSize\":" + cacheSize
           + ",\"inflight\":" + inflight + ",\"backends\":" + backendJson + "}";
