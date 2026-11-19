@@ -93,3 +93,30 @@ Testul pornește patru procese, oprește DW A, verifică failover către DW B ș
 ## Limite
 
 Serviciul de stocare este un punct unic de eșec. Nu există autentificare sau replicarea stocării. Fișierul de date poate fi pierdut/corupt în caz de defect al discului. Cache-ul poate furniza temporar date expirate în regim de avarie, iar timpul total al unui GET poate depăși 700 ms când există retry. Scripturile `/admin/fault` se folosesc doar local.
+
+
+
+## Corecturi v1.1
+
+Au fost realizate trei modificări în funcționarea proxy-ului:
+
+1. Limita de 12 operații concurente se aplică apelurilor către DW. Citirile din cache nu mai ocupă un loc în această limită.
+2. Pentru cererile GET identice primite simultan, Smart-proxy-ul reutilizează rezultatul unui singur apel către DW.
+3. Distribuția Round-Robin este verificată separat, folosind 100 de cereri distincte și diferența dintre contoarele celor două DW-uri.
+
+### Verificarea corecturilor
+
+Cu aplicația pornită, din folderul laboratorului:
+
+```powershell
+py .\scripts\test_cache_under_load.py
+py .\scripts\test_smart_proxy.py
+py .\scripts\test_round_robin.py
+```
+
+Rezultate obținute:
+- Cache: 200 OK / HIT cu 12 operații DW active.
+- Smart-proxy: 20 de cereri, un apel DW, 19 cereri reunite.
+- Round-Robin: 50 de cereri către fiecare DW.
+
+Testele Round-Robin trebuie efectuate cu ambele DW-uri sănătoase și circuitele CLOSED. Dacă au fost simulate erori anterior, se repornește aplicația înainte de verificare.

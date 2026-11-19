@@ -16,6 +16,11 @@ import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.Executors;
+
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeoutException;
+
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
@@ -37,6 +42,9 @@ final class ProxyServer implements AutoCloseable {
         }
     }
     private record Upstream(int status, byte[] data, String contentType, String node) {}
+
+    private record FlightKey(String cacheKey, long generation) {}
+
     private final HttpServer server;
     private final HttpClient client;
     private final List<Endpoint> backends = new ArrayList<>();
@@ -54,6 +62,9 @@ final class ProxyServer implements AutoCloseable {
     // Client request registry: used by the smart proxy and exposed in /metrics.
     private record ClientRequest(String correlationId, String clientAddress, String path, long startedNanos) {}
     private final ConcurrentHashMap<Long,ClientRequest> activeClients = new ConcurrentHashMap<>();
+
+    private final ConcurrentHashMap<FlightKey, CompletableFuture<Upstream>> pendingGets =
+        new ConcurrentHashMap<>();
 
     ProxyServer(int port, List<String> addresses, int ttlMs, int staleMs, int maxConcurrent,
                 int requestTimeoutMs, int breakerThreshold, int breakerOpenMs) throws IOException {
@@ -115,8 +126,14 @@ final class ProxyServer implements AutoCloseable {
                 first = false;
             }
             details.append(']');
-            snapshot = snapshot.substring(0,snapshot.length()-1) + ",\"activeClients\":" + details
-                    + ",\"cacheGeneration\":" + generation.get() + "}";
+
+        snapshot = snapshot.substring(0, snapshot.length() - 1)
+                + ",\"activeClients\":" + details
+                + ",\"cacheGeneration\":" + generation.get()
+                + ",\"pendingGetKeys\":" + pendingGets.size()
+                + ",\"upstreamLimit\":" + maxConcurrent
+                + "}";
+
             HttpUtil.send(ex,200,snapshot,"application/json");
             return;
         }
@@ -129,7 +146,17 @@ final class ProxyServer implements AutoCloseable {
             if (!prefix.startsWith("/api/") || prefix.length() > 128) {
                 HttpUtil.send(ex,400,HttpUtil.error("invalid_prefix",prefix),"application/json"); return;
             }
-            HttpUtil.send(ex,200,"{\"invalidated\":"+cache.invalidate(prefix)+"}","application/json");
+            int invalidated;
+
+            synchronized (cacheGenerationLock) {
+                generation.incrementAndGet();
+                invalidated = cache.invalidate(prefix);
+            }
+
+            HttpUtil.send(ex, 200,
+                    "{\"invalidated\":" + invalidated + "}",
+                    "application/json");
+
             return;
         }
         if (!path.startsWith("/api/")) {
@@ -142,14 +169,9 @@ final class ProxyServer implements AutoCloseable {
         String correlation = ex.getRequestHeaders().getFirst("X-Correlation-Id");
         if (correlation == null || correlation.isBlank()) correlation = UUID.randomUUID().toString();
         ex.getResponseHeaders().set("X-Correlation-Id",correlation);
-        if (!inFlight.tryAcquire()) {
-            metrics.rejected.increment();
-            ex.getResponseHeaders().set("Retry-After", "1");
-            ex.getResponseHeaders().set("X-Degraded", "load-shed");
-            try { HttpUtil.send(ex,429,HttpUtil.error("overloaded","concurrency limit reached"),"application/json"); }
-            finally { metrics.recordMicros((System.nanoTime()-start)/1000); }
-            return;
-        }
+
+
+
         long requestId = requestIds.incrementAndGet();
         activeClients.put(requestId, new ClientRequest(correlation,
                 ex.getRemoteAddress().toString(),path,start));
@@ -158,139 +180,339 @@ final class ProxyServer implements AutoCloseable {
             else put(ex, correlation);
         } finally {
             activeClients.remove(requestId);
-            inFlight.release();
+
             metrics.recordMicros((System.nanoTime()-start)/1000);
         }
     }
+
+
+    private void overloaded(HttpExchange ex) throws IOException {
+        metrics.rejected.increment();
+        ex.getResponseHeaders().set("Retry-After", "1");
+        ex.getResponseHeaders().set("X-Degraded", "load-shed");
+
+        HttpUtil.send(ex, 429,
+                HttpUtil.error("overloaded",
+                        "upstream concurrency limit reached"),
+                "application/json");
+    }
+
+    private TtlCache.Entry freshAtGeneration(
+            String key, long expectedGeneration) {
+
+        synchronized (cacheGenerationLock) {
+            return generation.get() == expectedGeneration
+                    ? cache.fresh(key)
+                    : null;
+        }
+    }
+
+
     private String key(HttpExchange ex) {
         String accept = ex.getRequestHeaders().getFirst("Accept");
         return ex.getRequestURI().toASCIIString() + "|accept=" + (accept == null ? "" : accept);
     }
+
     private void get(HttpExchange ex, String correlation) throws IOException {
-        String key = key(ex);
+        String cacheKey = key(ex);
         long seenGeneration = generation.get();
-        TtlCache.Entry found = cache.fresh(key);
-        if (found != null && generation.get() == seenGeneration) {
+
+        // Verificam cache-ul inainte de limita de concurenta
+        TtlCache.Entry cached = freshAtGeneration(cacheKey, seenGeneration);
+
+        if (cached != null) {
             metrics.cacheHit.increment();
-            reply(ex,200,found.body(),found.type(),found.backend(),"HIT"); return;
+            ex.getResponseHeaders().set("X-Smart-Proxy", "CACHE");
+            reply(ex, 200, cached.body(), cached.type(),
+                    cached.backend(), "HIT");
+            return;
         }
-        metrics.cacheMiss.increment();
-        Upstream result = fetch(ex,"GET",correlation);
-        if (result != null && result.status < 500) {
-            if (result.status == 200) {
+
+        // Verificam daca alt client a pornit deja aceeasi cerere
+        FlightKey flightKey = new FlightKey(cacheKey, seenGeneration);
+        CompletableFuture<Upstream> flight = pendingGets.get(flightKey);
+
+        if (flight != null) {
+            serveCoalesced(ex, flight, cacheKey);
+            return;
+        }
+
+        // Limitam doar solicitarile care au nevoie de backend
+        if (!inFlight.tryAcquire()) {
+            cached = freshAtGeneration(cacheKey, seenGeneration);
+
+            if (cached != null) {
+                metrics.cacheHit.increment();
+                ex.getResponseHeaders().set("X-Smart-Proxy", "CACHE");
+                reply(ex, 200, cached.body(), cached.type(),
+                        cached.backend(), "HIT");
+                return;
+            }
+
+            flight = pendingGets.get(flightKey);
+            if (flight != null) {
+                serveCoalesced(ex, flight, cacheKey);
+                return;
+            }
+
+            overloaded(ex);
+            return;
+        }
+
+        CompletableFuture<Upstream> created = new CompletableFuture<>();
+        flight = pendingGets.putIfAbsent(flightKey, created);
+
+        if (flight != null) {
+            inFlight.release();
+            serveCoalesced(ex, flight, cacheKey);
+            return;
+        }
+
+        try {
+            cached = freshAtGeneration(cacheKey, seenGeneration);
+
+            if (cached != null) {
+                metrics.cacheHit.increment();
+                created.complete(new Upstream(200, cached.body(),
+                        cached.type(), cached.backend()));
+
+                ex.getResponseHeaders().set("X-Smart-Proxy", "CACHE");
+                reply(ex, 200, cached.body(), cached.type(),
+                        cached.backend(), "HIT");
+                return;
+            }
+
+            metrics.cacheMiss.increment();
+
+            Upstream result = fetch(ex, "GET", correlation);
+
+            if (result != null && result.status == 200) {
                 synchronized (cacheGenerationLock) {
-                    // Network calls never run under this lock.
-                    if (generation.get() == seenGeneration)
-                        cache.put(key,result.data,result.contentType,result.node);
+                    if (generation.get() == seenGeneration) {
+                        cache.put(cacheKey, result.data,
+                                result.contentType, result.node);
+                    }
                 }
+            }
+
+            created.complete(result);
+            ex.getResponseHeaders().set("X-Smart-Proxy", "FORWARDED");
+            finishGet(ex, cacheKey, result, "MISS");
+
+        } catch (RuntimeException | Error failure) {
+            created.completeExceptionally(failure);
+            throw failure;
+
+        } finally {
+            pendingGets.remove(flightKey, created);
+            inFlight.release();
+        }
+    }
+
+    // Reutilizam rezultatul unei cereri GET deja pornite
+    private void serveCoalesced(
+            HttpExchange ex,
+            CompletableFuture<Upstream> flight,
+            String cacheKey) throws IOException {
+
+        metrics.coalescedGet.increment();
+        ex.getResponseHeaders().set("X-Smart-Proxy", "COALESCED");
+
+        try {
+            Upstream result = flight.get(
+                    (long) requestTimeoutMs * backends.size() + 1500,
+                    TimeUnit.MILLISECONDS);
+
+            finishGet(ex, cacheKey, result, "MISS");
+
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            finishGet(ex, cacheKey, null, "MISS");
+
+        } catch (TimeoutException | ExecutionException e) {
+            finishGet(ex, cacheKey, null, "MISS");
+        }
+    }
+
+    // Trimitem raspunsul catre client
+    private void finishGet(
+            HttpExchange ex,
+            String cacheKey,
+            Upstream result,
+            String cacheHeader) throws IOException {
+
+        if (result != null && result.status < 500) {
+            if (result.status >= 200 && result.status < 300) {
                 metrics.successful.increment();
             }
-            reply(ex,result.status,result.data,result.contentType,result.node,"MISS"); return;
+
+            reply(ex, result.status, result.data,
+                    result.contentType, result.node, cacheHeader);
+            return;
         }
-        // Controlled degradation: an expired entry is usable for a bounded stale-if-error window.
-        TtlCache.Entry stale = cache.stale(key);
+
+        TtlCache.Entry stale = cache.stale(cacheKey);
+
         if (stale != null) {
             metrics.cacheStale.increment();
-            ex.getResponseHeaders().set("Warning","110 - \"Response is stale\"");
-            ex.getResponseHeaders().set("X-Degraded","stale-if-error");
-            reply(ex,200,stale.body(),stale.type(),stale.backend(),"STALE"); return;
+            ex.getResponseHeaders().set(
+                    "Warning", "110 - \"Response is stale\"");
+            ex.getResponseHeaders().set(
+                    "X-Degraded", "stale-if-error");
+
+            reply(ex, 200, stale.body(), stale.type(),
+                    stale.backend(), "STALE");
+            return;
         }
-        ex.getResponseHeaders().set("X-Degraded","upstream-unavailable");
-        int status = result == null ? 503 : (result.status == 504 ? 504 : 503);
-        reply(ex,status,HttpUtil.error("upstream_unavailable","all backends failed or circuit open")
-                .getBytes(StandardCharsets.UTF_8),"application/json","none","MISS");
+
+        ex.getResponseHeaders().set(
+                "X-Degraded", "upstream-unavailable");
+
+        int status = result == null
+                ? 503
+                : (result.status == 504 ? 504 : 503);
+
+        reply(ex, status,
+                HttpUtil.error(
+                        "upstream_unavailable",
+                        "all backends failed or circuit open")
+                        .getBytes(StandardCharsets.UTF_8),
+                "application/json", "none", cacheHeader);
     }
+
+
+
     private void put(HttpExchange ex, String correlation) throws IOException {
         byte[] payload = ex.getRequestBody().readAllBytes();
+
         if (payload.length > 4096) {
-            reply(ex,413,HttpUtil.error("too_large","max 4096 bytes").getBytes(StandardCharsets.UTF_8),
-                    "application/json","none","BYPASS");return;
+            reply(ex, 413,
+                    HttpUtil.error("too_large", "max 4096 bytes")
+                            .getBytes(StandardCharsets.UTF_8),
+                    "application/json", "none", "BYPASS");
+            return;
         }
-        // Invalidate before and after write, without locking over any HTTP call.
-        synchronized (cacheGenerationLock) {
-            generation.incrementAndGet();
-            cache.invalidate("/api/orders");
-            cache.invalidate("/api/stats");
+
+        // Limitam operatiile catre DW, nu citirile din cache
+        if (!inFlight.tryAcquire()) {
+            overloaded(ex);
+            return;
         }
-        Set<Endpoint> attempted = new HashSet<>();
-        Upstream response = null;
-        for (int tries = 0; tries < backends.size(); tries++) {
-            Endpoint endpoint = select(attempted);
-            if (endpoint == null) break;
-            attempted.add(endpoint);
-            try {
-                Upstream current = request(endpoint,ex,"PUT",payload,correlation);
-                if (current.status < 500) {
-                    endpoint.breaker.success();
-                    response = current;
-                    break;
-                }
-                metrics.upstreamFailures.increment();
-                endpoint.breaker.failure();
-            } catch (Exception failure) {
-                metrics.upstreamFailures.increment();
-                endpoint.breaker.failure();
+
+        try {
+            // Invalidam cache-ul inainte de scriere
+            synchronized (cacheGenerationLock) {
+                generation.incrementAndGet();
+                cache.invalidate("/api/orders");
+                cache.invalidate("/api/stats");
             }
-        }
-        synchronized (cacheGenerationLock) {
-            generation.incrementAndGet();
-            cache.invalidate("/api/orders");
-            cache.invalidate("/api/stats");
-        }
-        if (response == null) {
-            ex.getResponseHeaders().set("X-Degraded","upstream-unavailable");
-            reply(ex,503,HttpUtil.error("write_failed","no available backend acknowledged the write")
-                    .getBytes(StandardCharsets.UTF_8),"application/json","none","INVALIDATED");
-        } else {
-            if (response.status >= 200 && response.status < 300) metrics.successful.increment();
-            reply(ex,response.status,response.data,response.contentType,response.node,"INVALIDATED");
-        }
-    }
-    private Upstream fetch(HttpExchange ex, String method, String correlation) {
-        Set<Endpoint> attempted = new HashSet<>();
-        Upstream last = null;
-        // Each backend is tried at most once; retries are restricted to idempotent GET.
-        for (int tryNo = 0; tryNo < backends.size(); tryNo++) {
-            Endpoint endpoint = select(attempted);
-            if (endpoint == null) break;
-            attempted.add(endpoint);
-            try {
-                Upstream result = request(endpoint,ex,method,new byte[0],correlation);
-                if (result.status >= 500) {
+
+            Set<Endpoint> attempted = new HashSet<>();
+            Upstream response = null;
+
+            for (int tries = 0; tries < backends.size(); tries++) {
+                Endpoint endpoint = select(attempted);
+
+                if (endpoint == null) break;
+                attempted.add(endpoint);
+
+                try {
+                    Upstream current = request(
+                            endpoint, ex, "PUT", payload, correlation);
+
+                    if (current.status < 500) {
+                        endpoint.breaker.success();
+                        response = current;
+                        break;
+                    }
+
                     metrics.upstreamFailures.increment();
                     endpoint.breaker.failure();
-                    last = result;
-                } else {
-                    endpoint.breaker.success();
-                    return result;
+
+                } catch (Exception failure) {
+                    metrics.upstreamFailures.increment();
+                    endpoint.breaker.failure();
                 }
-            } catch (java.net.http.HttpTimeoutException e) {
-                metrics.upstreamFailures.increment();
-                endpoint.breaker.failure();
-                last = new Upstream(504,new byte[0],"application/json",endpoint.uri.toString());
-            } catch (Exception e) {
-                metrics.upstreamFailures.increment();
-                endpoint.breaker.failure();
-                last = new Upstream(503,new byte[0],"application/json",endpoint.uri.toString());
             }
-            if (tryNo + 1 < backends.size()) {
-                metrics.retries.increment();
-                // Exponential backoff (bounded) plus random jitter prevents synchronized retries.
-                long base = Math.min(250,40L << Math.min(3,tryNo));
-                try { Thread.sleep(base + ThreadLocalRandom.current().nextLong(0,41)); }
-                catch (InterruptedException e) { Thread.currentThread().interrupt(); break; }
+
+            // Invalidam si dupa scriere
+            synchronized (cacheGenerationLock) {
+                generation.incrementAndGet();
+                cache.invalidate("/api/orders");
+                cache.invalidate("/api/stats");
             }
+
+            if (response == null) {
+                ex.getResponseHeaders().set(
+                        "X-Degraded", "upstream-unavailable");
+
+                reply(ex, 503,
+                        HttpUtil.error(
+                                "write_failed",
+                                "no available backend acknowledged the write")
+                                .getBytes(StandardCharsets.UTF_8),
+                        "application/json", "none", "INVALIDATED");
+
+            } else {
+                if (response.status >= 200 && response.status < 300) {
+                    metrics.successful.increment();
+                }
+
+                reply(ex, response.status, response.data,
+                        response.contentType, response.node, "INVALIDATED");
+            }
+
+        } finally {
+            // Eliberam locul indiferent de rezultat
+            inFlight.release();
         }
-        return last;
     }
-    private Endpoint select(Set<Endpoint> attempted) {
-        int start = Math.floorMod(rr.getAndIncrement(),backends.size());
-        for (int i = 0; i < backends.size(); i++) {
-            Endpoint endpoint = backends.get((start+i)%backends.size());
-            if (!attempted.contains(endpoint) && endpoint.healthy && endpoint.breaker.acquire()) return endpoint;
+
+        private Upstream fetch(HttpExchange ex, String method, String correlation) {
+            Set<Endpoint> attempted = new HashSet<>();
+            Upstream last = null;
+            // Each backend is tried at most once; retries are restricted to idempotent GET.
+            for (int tryNo = 0; tryNo < backends.size(); tryNo++) {
+                Endpoint endpoint = select(attempted);
+                if (endpoint == null) break;
+                attempted.add(endpoint);
+                try {
+                    Upstream result = request(endpoint,ex,method,new byte[0],correlation);
+                    if (result.status >= 500) {
+                        metrics.upstreamFailures.increment();
+                        endpoint.breaker.failure();
+                        last = result;
+                    } else {
+                        endpoint.breaker.success();
+                        return result;
+                    }
+                } catch (java.net.http.HttpTimeoutException e) {
+                    metrics.upstreamFailures.increment();
+                    endpoint.breaker.failure();
+                    last = new Upstream(504,new byte[0],"application/json",endpoint.uri.toString());
+                } catch (Exception e) {
+                    metrics.upstreamFailures.increment();
+                    endpoint.breaker.failure();
+                    last = new Upstream(503,new byte[0],"application/json",endpoint.uri.toString());
+                }
+                if (tryNo + 1 < backends.size()) {
+                    metrics.retries.increment();
+                    // Exponential backoff (bounded) plus random jitter prevents synchronized retries.
+                    long base = Math.min(250,40L << Math.min(3,tryNo));
+                    try { Thread.sleep(base + ThreadLocalRandom.current().nextLong(0,41)); }
+                    catch (InterruptedException e) { Thread.currentThread().interrupt(); break; }
+                }
+            }
+            return last;
         }
-        return null;
-    }
+        private Endpoint select(Set<Endpoint> attempted) {
+            int start = Math.floorMod(rr.getAndIncrement(),backends.size());
+            for (int i = 0; i < backends.size(); i++) {
+                Endpoint endpoint = backends.get((start+i)%backends.size());
+                if (!attempted.contains(endpoint) && endpoint.healthy && endpoint.breaker.acquire()) return endpoint;
+            }
+            return null;
+        }
     private Upstream request(Endpoint endpoint,HttpExchange ex,String method,byte[] body,String correlation)
             throws IOException, InterruptedException {
         endpoint.chosen.increment();

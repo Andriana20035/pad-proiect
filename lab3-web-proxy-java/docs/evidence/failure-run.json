@@ -1,5 +1,5 @@
 {
-  "timestamp_utc": "2026-11-10T01:56:14.785757+00:00",
+  "timestamp_utc": "2026-11-19T14:01:29.973339+00:00",
   "environment": {
     "python": "3.13.5",
     "os": "Windows",
@@ -8,8 +8,8 @@
   "proxy": "http://127.0.0.1:18080",
   "scenarios": {
     "round_robin": {
-      "selected_a": 104,
-      "selected_b": 267,
+      "selected_a": 65,
+      "selected_b": 64,
       "result": "PASS"
     },
     "cache_and_contract": {
@@ -26,9 +26,9 @@
       "statuses": {
         "200": 16
       },
-      "breaker_A": "CLOSED",
-      "healthy_A": false,
-      "retries_total": 36,
+      "breaker_A": "OPEN",
+      "healthy_A": true,
+      "retries_total": 15,
       "result": "PASS"
     },
     "recovery": {
@@ -38,7 +38,7 @@
     },
     "synchronization_and_correlation": {
       "same_response_on_both_dw": true,
-      "correlation": "lab3-check-1794275774785753200",
+      "correlation": "lab3-check-1795096889973328200",
       "result": "PASS"
     },
     "both_unavailable_stale": {
@@ -55,27 +55,28 @@
         "429": 60
       },
       "proxy_max_in_flight": 12,
-      "rejected429_total": 188,
-      "observed_p50_ms": 3.732,
-      "observed_p95_ms": 753.175,
-      "observed_p99_ms": 777.709,
+      "rejected429_total": 68,
+      "observed_p50_ms": 5.615,
+      "observed_p95_ms": 769.465,
+      "observed_p99_ms": 781.193,
       "result": "PASS"
     }
   },
   "initial_metrics": {
-    "requests": 554,
-    "windowSize": 554,
-    "p50Ms": 4.52,
-    "p95Ms": 751.12,
-    "p99Ms": 780.581,
-    "cacheHit": 82,
-    "cacheMiss": 343,
-    "cacheStale": 1,
-    "rejected429": 128,
-    "retries": 36,
-    "upstreamFailures": 37,
-    "success2xx": 319,
-    "cacheSize": 311,
+    "requests": 142,
+    "windowSize": 142,
+    "p50Ms": 6.005,
+    "p95Ms": 757.232,
+    "p99Ms": 781.193,
+    "cacheHit": 1,
+    "cacheMiss": 114,
+    "cacheStale": 0,
+    "coalescedGet": 19,
+    "rejected429": 8,
+    "retries": 12,
+    "upstreamFailures": 12,
+    "success2xx": 121,
+    "cacheSize": 102,
     "inflight": 0,
     "backends": [
       {
@@ -83,32 +84,35 @@
         "circuit": "OPEN",
         "healthy": true,
         "failures": 6,
-        "selected": 96
+        "selected": 57
       },
       {
         "url": "http://127.0.0.1:9012",
-        "circuit": "CLOSED",
+        "circuit": "OPEN",
         "healthy": true,
-        "failures": 0,
-        "selected": 260
+        "failures": 6,
+        "selected": 57
       }
     ],
     "activeClients": [],
-    "cacheGeneration": 2
+    "cacheGeneration": 0,
+    "pendingGetKeys": 0,
+    "upstreamLimit": 12
   },
   "final_metrics": {
-    "requests": 677,
-    "windowSize": 677,
-    "p50Ms": 3.732,
-    "p95Ms": 753.175,
-    "p99Ms": 777.709,
-    "cacheHit": 83,
-    "cacheMiss": 404,
-    "cacheStale": 2,
-    "rejected429": 188,
-    "retries": 49,
-    "upstreamFailures": 51,
-    "success2xx": 368,
+    "requests": 265,
+    "windowSize": 265,
+    "p50Ms": 5.615,
+    "p95Ms": 769.465,
+    "p99Ms": 781.193,
+    "cacheHit": 2,
+    "cacheMiss": 175,
+    "cacheStale": 1,
+    "coalescedGet": 19,
+    "rejected429": 68,
+    "retries": 28,
+    "upstreamFailures": 29,
+    "success2xx": 170,
     "cacheSize": 45,
     "inflight": 0,
     "backends": [
@@ -117,18 +121,20 @@
         "circuit": "OPEN",
         "healthy": true,
         "failures": 7,
-        "selected": 120
+        "selected": 84
       },
       {
         "url": "http://127.0.0.1:9012",
         "circuit": "OPEN",
         "healthy": true,
         "failures": 7,
-        "selected": 299
+        "selected": 96
       }
     ],
     "activeClients": [],
-    "cacheGeneration": 4
+    "cacheGeneration": 2,
+    "pendingGetKeys": 0,
+    "upstreamLimit": 12
   },
   "result": "PASS"
 }
